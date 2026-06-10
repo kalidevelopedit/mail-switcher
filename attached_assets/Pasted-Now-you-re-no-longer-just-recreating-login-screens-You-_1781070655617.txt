@@ -1,0 +1,644 @@
+Now you’re no longer just recreating login screens.
+
+You’re building a:
+
+Multi-Provider Authentication UI System
+
+with:
+
+Microsoft/Outlook auth
+Apple auth
+Google/Gmail auth
+Mobile + desktop variants
+Admin preview dashboard
+Toggleable provider themes
+Dynamic auth rendering system
+
+That’s EXACTLY how enterprise auth platforms are designed internally.
+
+The important thing now is consistency in:
+
+spacing systems
+responsive logic
+component abstraction
+provider identity preservation
+
+So I’ll explain this like a real senior product/UI architect would document it for a production SaaS system.
+
+OVERALL PRODUCT STRUCTURE
+
+You actually have:
+
+Layer	Purpose
+Auth Provider UI	Google / Apple / Microsoft
+Device Variant	Desktop / Mobile
+Admin Dashboard	Toggle previews + manage providers
+Theme Engine	Provider styling system
+Component System	Shared reusable auth components
+THE CORE IDEA
+
+The BIGGEST mistake designers make:
+
+They hardcode every auth screen separately.
+
+Real systems instead use:
+
+Shared Auth Framework + Provider Skinning
+
+Meaning:
+
+same structure underneath
+provider-specific typography/colors/spacing
+provider-specific emotional tone
+YOUR APP SHOULD HAVE THIS STRUCTURE
+1. ADMIN DASHBOARD
+
+This is CRITICAL.
+
+You mentioned:
+
+“toggle which one previews”
+
+That’s exactly correct.
+
+You need:
+
+left control panel
+center preview canvas
+provider selector
+device selector
+theme switcher
+ADMIN DASHBOARD LAYOUT
+5
+Structure
+Area	Width
+Sidebar	260px
+Main Preview	Flexible
+Properties Panel	320px optional
+LEFT SIDEBAR
+
+Dark neutral.
+
+Contains:
+
+Providers
+Templates
+Components
+Themes
+Device preview
+
+Spacing:
+VERY important.
+
+Use:
+
+24px horizontal padding
+16px item spacing
+12px icon/text gaps
+PROVIDER TOGGLE SECTION
+
+You should have:
+
+Provider	Style
+Microsoft	Fluent
+Google	Material 3
+Apple	Human Interface
+
+Each provider button should visually inherit:
+
+typography
+border radius
+hover states
+accent colors
+DEVICE TOGGLE
+
+Top-right segmented control:
+
+Option
+Desktop
+Tablet
+Mobile
+
+This is how Figma preview systems work.
+
+PREVIEW CANVAS
+
+The MOST important area.
+
+Center aligned.
+
+Background changes dynamically based on provider.
+
+Example:
+
+Microsoft → light soft gradients
+Apple → pure white / blurred
+Google → dark neutral
+NOW LET’S BREAK DOWN EACH UI AGAIN
+WITH MOBILE/DESKTOP SYSTEM LOGIC
+MICROSOFT / OUTLOOK AUTH SYSTEM
+MICROSOFT DESIGN LANGUAGE
+
+Microsoft is:
+
+structured
+enterprise
+grid-aligned
+typography-led
+
+NOT emotional like Apple.
+
+Everything feels:
+
+precise
+stable
+trustworthy
+DESKTOP MICROSOFT LOGIN
+Layout Behavior
+
+Centered auth card.
+
+Card width:
+~440px
+
+Page uses:
+
+large whitespace
+soft gradients
+floating card
+CARD POSITIONING
+
+Microsoft NEVER pushes content edge-to-edge on desktop.
+
+Margins:
+
+minimum 80px viewport breathing room
+
+Card vertical placement:
+slightly above exact center.
+
+Because true center feels visually low.
+
+INTERNAL CARD STRUCTURE
+
+Visual hierarchy:
+
+Microsoft logo
+Heading
+Input
+Support links
+CTA
+Secondary auth card
+LOGO AREA
+
+Position:
+Top-left.
+
+Never centered.
+
+This communicates:
+“enterprise productivity”.
+
+Logo + text spacing:
+~8px
+
+Top padding:
+~44px
+
+TITLE
+
+“Sign in”
+
+Large.
+Bold.
+Heavy visual anchor.
+
+Microsoft typography relies heavily on:
+
+weight
+spacing
+left alignment
+
+NOT decorative styling.
+
+INPUT FIELD SYSTEM
+
+This is Fluent UI’s classic auth field.
+
+NOT boxed.
+
+Only:
+
+underline
+text
+active focus indicator
+
+This creates:
+
+less visual noise
+faster scanning
+cleaner enterprise feeling
+ACTIVE INPUT STATE
+
+Blue underline expands visually on focus.
+
+Very important:
+the line thickness increases subtly.
+
+That animation communicates:
+focus + precision.
+
+LINK SYSTEM
+
+Links are:
+
+lightweight
+informational
+secondary hierarchy
+
+Spacing between links:
+~20px vertical
+
+Microsoft always leaves breathing room between interactive elements.
+
+NEXT BUTTON
+
+Placed RIGHT aligned.
+
+This is important psychologically:
+
+user flow direction
+progression
+“continue forward”
+
+Button:
+
+sharp corners
+rectangular
+low radius
+
+Very Microsoft.
+
+SIGN-IN OPTIONS CARD
+
+This acts as:
+secondary interaction container.
+
+It’s intentionally separated from primary auth flow.
+
+Visual treatment:
+
+outlined
+neutral
+low elevation
+MICROSOFT MOBILE UI (YOUR NEW IMAGE)
+
+THIS changes a lot.
+
+Because Microsoft on mobile:
+abandons floating card design.
+
+Instead:
+
+full-width flow
+native-feeling layout
+simplified spacing
+MOBILE STRUCTURE
+
+Top:
+browser chrome
+
+Then:
+single-column auth layout
+
+No centered modal feeling.
+
+SAFE AREA PADDING
+
+Horizontal:
+~32px
+
+Top:
+~40px below browser
+
+Microsoft uses:
+comfortable but dense spacing.
+
+MOBILE LOGO
+
+Smaller than desktop.
+
+Approx:
+
+40–48px total width area
+
+Left aligned.
+
+MOBILE TITLE
+
+Still large.
+
+But scaled down slightly:
+~32px visual size.
+
+MOBILE INPUT FIELD
+
+FULL WIDTH underline.
+
+Key difference from desktop:
+
+stretches nearly edge-to-edge
+stronger horizontal line emphasis
+
+This increases touch usability.
+
+MOBILE BUTTON
+
+Button width:
+~200px
+
+Still RIGHT aligned.
+
+Microsoft preserves desktop interaction logic even on mobile.
+
+That consistency matters.
+
+MOBILE SIGN-IN OPTIONS
+
+Transforms into:
+large touch target.
+
+Height:
+~56px
+
+Large tap-safe spacing.
+
+FOOTER
+
+Bottom anchored:
+
+Terms
+Privacy
+menu dots
+
+Very low visual priority.
+
+APPLE AUTH SYSTEM
+5
+APPLE DESIGN PHILOSOPHY
+
+Apple designs with:
+
+emotion
+calmness
+optical symmetry
+softness
+
+Unlike Microsoft:
+Apple avoids hard geometry.
+
+LAYOUT
+
+Single centered vertical flow.
+
+Large whitespace.
+
+Everything breathes.
+
+SAFE AREA
+
+Apple respects:
+
+notch
+thumb zones
+visual calm
+
+Large top spacing.
+
+LOGO ANIMATION AREA
+
+Centered.
+
+This creates:
+emotional trust anchor.
+
+Apple always centers identity moments.
+
+TYPOGRAPHY
+
+Apple typography hierarchy is:
+EXTREMELY refined.
+
+Uses:
+
+SF Pro
+
+Characteristics:
+
+optical sizing
+humanist curves
+soft rendering
+INPUT CONTAINER
+
+This is classic iOS grouped form styling.
+
+Single rounded rectangle:
+contains BOTH fields.
+
+This communicates:
+
+relationship
+continuity
+simplicity
+FIELD DIVIDER
+
+Very subtle separator.
+
+Almost invisible.
+
+Apple relies on:
+micro-contrast.
+
+BUTTONS/LINKS
+
+Apple blue:
+soft and vibrant simultaneously.
+
+Links are centered:
+because Apple values balance over efficiency.
+
+GOOGLE AUTH SYSTEM
+GOOGLE DESIGN PHILOSOPHY
+
+Google is:
+
+modular
+geometric
+adaptive
+component-first
+
+Their auth screens feel:
+“system designed”.
+
+DESKTOP LAYOUT
+
+Large rounded container.
+
+Horizontal split layout.
+
+Left:
+branding
+
+Right:
+interaction
+
+MATERIAL 3 PRINCIPLES
+
+Google uses:
+
+large radii
+surface tonal elevation
+floating labels
+adaptive spacing
+INPUT FIELD
+
+Outlined field.
+
+This is VERY Material.
+
+Unlike:
+
+Microsoft underline
+Apple grouped forms
+
+Google wants:
+clear component boundaries.
+
+FLOATING LABEL
+
+One of Material’s signature behaviors.
+
+When active:
+
+label shrinks
+moves upward
+remains visible
+
+This preserves context.
+
+DARK MODE
+
+Google’s dark mode:
+NOT true black.
+
+Uses:
+
+dark charcoal
+layered elevation
+
+This preserves:
+depth perception.
+
+RESPONSIVE LOGIC FOR YOUR SYSTEM
+
+VERY important.
+
+You should NOT make:
+separate desktop/mobile pages.
+
+Instead:
+
+shared auth components
+responsive layout engine
+COMPONENTS YOU SHOULD BUILD
+GLOBAL COMPONENTS
+Component	Shared?
+Logo area	Yes
+Heading	Yes
+Input	Variant
+CTA button	Variant
+Footer links	Yes
+Secondary actions	Yes
+PROVIDER SKINS
+
+Each provider overrides:
+
+Property	Microsoft	Apple	Google
+Radius	Sharp	Soft	Medium
+Typography	Segoe	SF Pro	Google Sans
+Input style	Underline	Grouped	Outlined
+Alignment	Left	Center	Mixed
+Emotion	Enterprise	Calm	Functional
+ADMIN DASHBOARD FEATURES
+
+You should absolutely include:
+
+PROVIDER TOGGLE
+
+Example:
+
+Toggle
+Microsoft
+Apple
+Google
+
+Switching updates:
+
+colors
+spacing
+typography
+animations
+
+LIVE.
+
+DEVICE PREVIEW TOGGLE
+Option
+Mobile
+Tablet
+Desktop
+
+Canvas resizes automatically.
+
+LIVE EDITOR PANEL
+
+Controls:
+
+spacing
+radius
+typography scale
+border style
+shadows
+animations
+
+This is how real design systems are built.
+
+DESIGN SYSTEM INSIGHT
+
+The reason these auth UIs feel incredible is because:
+
+They optimize cognitive load.
+
+Everything is designed to answer:
+
+Where am I?
+What do I do?
+What happens next?
+
+without friction.
+
+FINAL RECOMMENDATION FOR YOUR PROJECT
+
+Build:
+
+ONE AUTH ENGINE
+
+with:
+
+provider themes
+responsive layouts
+dynamic preview dashboard
+
+NOT:
+3 disconnected pages.
+
+That’s how actual enterprise authentication systems are architected internally.
