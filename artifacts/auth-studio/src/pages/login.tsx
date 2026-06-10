@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence, type MotionProps } from 'framer-motion';
 import { ChevronLeft, Key, Eye, EyeOff, Check } from 'lucide-react';
 
 const MicrosoftLogo = () => (
@@ -33,6 +34,11 @@ const AppleSpinRing = () => (
         to { transform: rotate(360deg); }
       }
       .apple-ring { animation: apple-ring-spin 4s linear infinite; }
+      @keyframes ms-pulse {
+        0%, 100% { transform: scale(1); opacity: 0.6; }
+        50% { transform: scale(1.5); opacity: 0; }
+      }
+      .ms-passkey-pulse { animation: ms-pulse 1.8s ease-in-out infinite; }
     `}</style>
     <svg className="apple-ring absolute" width="88" height="88" viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
       {Array.from({ length: 24 }).map((_, i) => {
@@ -45,54 +51,146 @@ const AppleSpinRing = () => (
   </>
 );
 
+// ─── Microsoft types & helpers ────────────────────────────────────────────────
+
+type MsStep = 'email' | 'signin-options' | 'passkey' | 'password' | 'stay' | 'register' | 'recover';
+type RegStep = 'reg-email' | 'reg-password' | 'reg-name' | 'reg-dob' | 'reg-verify';
+type RecStep = 'rec-find' | 'rec-options' | 'rec-code';
+
+function QrCodeSvg() {
+  const cells: [number, number][] = [
+    [40,5],[48,5],[56,5],[40,13],[56,13],[40,21],[48,21],
+    [5,40],[13,40],[21,40],[5,48],[21,48],[5,56],[13,56],[21,56],
+    [40,40],[56,40],[48,48],[40,56],[56,56],
+    [65,40],[73,40],[65,48],[81,48],[65,56],[73,56],[81,56],
+    [40,65],[56,65],[48,73],[40,81],[48,81],[56,81],
+    [65,65],[73,65],[81,65],[65,73],[81,73],[65,81],[73,81],[81,81],
+  ];
+  return (
+    <svg viewBox="0 0 100 100" className="w-full h-full">
+      <rect x="5" y="5" width="30" height="30" rx="2" fill="none" stroke="black" strokeWidth="4"/>
+      <rect x="13" y="13" width="14" height="14" fill="black"/>
+      <rect x="65" y="5" width="30" height="30" rx="2" fill="none" stroke="black" strokeWidth="4"/>
+      <rect x="73" y="13" width="14" height="14" fill="black"/>
+      <rect x="5" y="65" width="30" height="30" rx="2" fill="none" stroke="black" strokeWidth="4"/>
+      <rect x="13" y="73" width="14" height="14" fill="black"/>
+      {cells.map(([x, y], i) => <rect key={i} x={x} y={y} width="7" height="7" fill="black"/>)}
+    </svg>
+  );
+}
+
 // ─── Microsoft ──────────────────────────────────────────────────────────────
 
 function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
   const isMobile = device === 'mobile';
-  const [step, setStep] = useState<'email' | 'password' | 'stay'>('email');
+
+  const [step, setStep] = useState<MsStep>('email');
+  const [regStep, setRegStep] = useState<RegStep>('reg-email');
+  const [recStep, setRecStep] = useState<RecStep>('rec-find');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [dontShow, setDontShow] = useState(false);
+
+  // Register state
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regShowPw, setRegShowPw] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [regMonth, setRegMonth] = useState('January');
+  const [regDay, setRegDay] = useState('1');
+  const [regYear, setRegYear] = useState('1990');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [promoEmails, setPromoEmails] = useState(false);
+
+  // Recover state
+  const [recEmail, setRecEmail] = useState('');
+  const [recCode, setRecCode] = useState('');
+  const [recCaptcha, setRecCaptcha] = useState(false);
+
+  // Passkey scanning phase
+  const [passkeyPhase, setPasskeyPhase] = useState<'scanning' | 'phone'>('scanning');
+
   const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
   }, [step]);
 
-  const bg = !isMobile
-    ? {
-        backgroundColor: isDark ? '#1b1b1b' : '#ffffff',
-        backgroundImage: "url('/ms-bg.svg')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      }
+  useEffect(() => {
+    if (step !== 'passkey') return;
+    setPasskeyPhase('scanning');
+    const t = setTimeout(() => setPasskeyPhase('phone'), 2000);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  const lightBg: React.CSSProperties = !isMobile
+    ? { backgroundColor: isDark ? '#1b1b1b' : '#ffffff', backgroundImage: "url('/ms-bg.svg')", backgroundSize: 'cover', backgroundPosition: 'center' }
     : { backgroundColor: isDark ? '#111' : '#ffffff' };
 
-  const cardCls = !isMobile
-    ? `px-10 pt-10 pb-8 shadow-md ${isDark ? 'bg-[#242424]' : 'bg-white'}`
-    : '';
+  const darkPageBg: React.CSSProperties = {
+    backgroundColor: '#0d0d18',
+    backgroundImage: "url('/ms-bg.svg')",
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  };
 
-  const textColor = isDark ? 'text-white' : 'text-[#1b1b1b]';
-  const subColor = isDark ? '#ccc' : '#1b1b1b';
-  const inputBorder = isDark
+  const isOnDark = step === 'password' || step === 'stay' || step === 'passkey';
+  const bg = isOnDark ? darkPageBg : lightBg;
+
+  const fadeSlide: MotionProps = {
+    initial: { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -8 },
+    transition: { duration: 0.22 },
+  };
+
+  const fadeOnly: MotionProps = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.18 },
+  };
+
+  // Light card (email, options, register, recover steps)
+  const lightCardCls = !isMobile
+    ? `px-10 pt-10 pb-8 shadow-md ${isDark ? 'bg-[#242424] text-white' : 'bg-white text-[#1b1b1b]'}`
+    : '';
+  const lightText = isDark ? 'text-white' : 'text-[#1b1b1b]';
+  const lightSub = isDark ? '#ccc' : '#1b1b1b';
+  const lightInputCls = isDark
     ? 'border-[#555] focus:border-[#0078D4] text-white placeholder-gray-500'
-    : 'border-[#000]/40 focus:border-[#0078D4] text-black placeholder-gray-500';
+    : 'border-[#000]/40 focus:border-[#0078D4] text-black placeholder-gray-400';
+  const lightUnderlineInput = `w-full pb-2 border-0 border-b focus:outline-none bg-transparent text-[15px] transition-colors ${lightInputCls}`;
+  const lightUnderlineInputSolid = `w-full pb-2 border-0 border-b focus:outline-none bg-transparent text-[15px] transition-colors border-[#000]/40 focus:border-[#0078D4] text-black placeholder-gray-400`;
+
+  // Dark card (password, stay, passkey steps)
+  const darkCardBg = 'bg-[#2a2a2a]';
+  const msLogoRow = (dark: boolean) => (
+    <div className="flex items-center gap-2 mb-5">
+      <MicrosoftLogo />
+      {!isMobile && <span className={`text-[15px] font-semibold tracking-wide ${dark ? 'text-[#aaa]' : isDark ? 'text-[#aaa]' : 'text-[#737373]'}`}>Microsoft</span>}
+    </div>
+  );
+
+  const wrapCls = isMobile ? 'w-full h-full px-8 pt-10' : 'w-[440px]';
 
   return (
-    <div className="w-full h-full flex items-center justify-center font-[system-ui,Segoe_UI,sans-serif]" style={bg}>
-      <div className={`flex flex-col ${isMobile ? 'w-full h-full px-8 pt-10' : 'w-[440px] gap-4'}`}>
+    <div
+      className="w-full h-full flex items-center justify-center font-[system-ui,Segoe_UI,sans-serif] transition-[background-color] duration-300"
+      style={bg}
+    >
+      <AnimatePresence mode="wait">
 
-        {/* ── Step: email ── */}
+        {/* ── Email step ─────────────────────────────────────────────────────── */}
         {step === 'email' && (
-          <>
-            <div className={`flex flex-col gap-0 ${cardCls}`}>
-              <div className="flex items-center gap-2 mb-5">
-                <MicrosoftLogo />
-                {!isMobile && <span className="text-[15px] font-semibold tracking-wide" style={{ color: isDark ? '#ccc' : '#737373' }}>Microsoft</span>}
-              </div>
-              <h1 className={`text-[24px] font-bold mb-5 ${textColor}`}>Sign in</h1>
+          <motion.div key="email" {...fadeSlide} className={`flex flex-col ${wrapCls} ${isMobile ? '' : 'gap-4'}`}>
+            <div className={`flex flex-col gap-0 ${lightCardCls}`}>
+              {msLogoRow(false)}
+              <h1 className={`text-[24px] font-bold mb-5 ${lightText}`}>Sign in</h1>
               <div className="relative mb-4">
                 <input
                   data-testid="ms-email-input"
@@ -102,14 +200,17 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                   onKeyDown={e => e.key === 'Enter' && setStep('password')}
                   placeholder="Email, phone, or Skype"
                   autoFocus
-                  className={`w-full pb-2 border-0 border-b focus:outline-none bg-transparent text-[15px] transition-colors ${inputBorder}`}
+                  className={lightUnderlineInput}
                 />
               </div>
-              <div className="text-[13px] mb-3" style={{ color: subColor }}>
-                No account? <a href="#" data-testid="ms-create-account" className="text-[#0078D4] hover:underline">Create one!</a>
+              <div className="text-[13px] mb-3" style={{ color: lightSub }}>
+                No account?{' '}
+                <a href="#" onClick={e => { e.preventDefault(); setStep('register'); setRegStep('reg-email'); }}
+                  className="text-[#0078D4] hover:underline">Create one!</a>
               </div>
               <div className="text-[13px] mb-8">
-                <a href="#" data-testid="ms-cant-access" className="text-[#0078D4] hover:underline">Can't access your account?</a>
+                <a href="#" onClick={e => { e.preventDefault(); setStep('recover'); setRecStep('rec-find'); }}
+                  className="text-[#0078D4] hover:underline">Can't access your account?</a>
               </div>
               <div className="flex justify-end">
                 <button
@@ -124,6 +225,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
             </div>
             <div
               data-testid="ms-signin-options"
+              onClick={() => setStep('signin-options')}
               className={`flex items-center px-4 py-3 cursor-pointer border transition-colors ${isMobile ? 'mt-6' : ''}
                 ${isDark ? 'bg-[#242424] border-[#444] hover:bg-[#2e2e2e] text-white' : 'bg-white border-gray-300 hover:bg-gray-50 text-[#1b1b1b]'}`}
             >
@@ -139,32 +241,133 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 </div>
               </div>
             )}
-          </>
+          </motion.div>
         )}
 
-        {/* ── Step: password ── */}
-        {step === 'password' && (
-          <>
-            <div className={`flex flex-col gap-0 ${cardCls}`}>
-              <div className="flex items-center gap-2 mb-5">
-                <MicrosoftLogo />
-                {!isMobile && <span className="text-[15px] font-semibold tracking-wide" style={{ color: isDark ? '#ccc' : '#737373' }}>Microsoft</span>}
-              </div>
+        {/* ── Sign-in options ────────────────────────────────────────────────── */}
+        {step === 'signin-options' && (
+          <motion.div key="signin-options" {...fadeOnly} className={`flex flex-col ${wrapCls}`}>
+            <div className={`flex flex-col ${lightCardCls}`}>
+              {msLogoRow(false)}
+              <h1 className={`text-[24px] font-bold mb-5 ${lightText}`}>Sign-in options</h1>
+
+              <div className="border-t border-dashed border-gray-300" />
               <button
-                data-testid="ms-back-btn"
-                onClick={() => setStep('email')}
-                className={`flex items-center gap-1.5 text-[13px] mb-4 w-fit transition-colors ${isDark ? 'text-[#ccc] hover:text-white' : 'text-[#1b1b1b] hover:text-black'}`}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                onClick={() => setStep('passkey')}
+                className={`w-full flex items-start gap-3 py-3.5 px-1 transition-colors text-left ${isDark ? 'hover:bg-[#2e2e2e]' : 'hover:bg-gray-50'}`}
               >
-                <ChevronLeft className="w-4 h-4" />
-                <span
-                  className={`text-[13px] px-2 py-0.5 rounded-sm border ${isDark ? 'border-[#555] bg-[#333]' : 'border-gray-300 bg-gray-100'}`}
-                >
-                  {email || 'user@example.com'}
-                </span>
+                <div className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center mt-0.5 ${isDark ? 'bg-[#333]' : 'bg-gray-100'}`}>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                    <circle cx="9" cy="8" r="3.5" stroke={isDark ? '#ddd' : '#1b1b1b'} strokeWidth="1.5"/>
+                    <path d="M2 20c0-3.31 3.13-6 7-6" stroke={isDark ? '#ddd' : '#1b1b1b'} strokeWidth="1.5" strokeLinecap="round"/>
+                    <circle cx="17.5" cy="16.5" r="4" stroke="#0078D4" strokeWidth="1.5"/>
+                    <path d="M16 16.5l1.2 1.2 2.3-2.3" stroke="#0078D4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-[15px] font-medium ${lightText}`}>Face, fingerprint, PIN or security key</div>
+                  <div className="text-[13px] text-[#605e5c] mt-0.5">Use your device to sign in with a passkey.</div>
+                </div>
+                <div className="flex-shrink-0 mt-1.5">
+                  <div className="w-5 h-5 border border-gray-400 rounded-full flex items-center justify-center text-gray-400 text-[11px] leading-none select-none">?</div>
+                </div>
               </button>
-              <h1 className={`text-[24px] font-bold mb-5 ${textColor}`}>Enter password</h1>
-              <div className="relative mb-6">
+              <div className="border-b border-dashed border-gray-300 mb-6" />
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setStep('email')}
+                  className={`px-8 py-1.5 border text-[15px] font-semibold transition-colors ${isDark ? 'border-[#555] text-white hover:bg-[#333]' : 'border-gray-400 text-[#1b1b1b] hover:bg-gray-100'}`}
+                  style={{ borderRadius: 0 }}
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Passkey step ───────────────────────────────────────────────────── */}
+        {step === 'passkey' && (
+          <motion.div key="passkey" {...fadeOnly} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              {msLogoRow(true)}
+              <AnimatePresence mode="wait">
+                {passkeyPhase === 'scanning' ? (
+                  <motion.div key="scanning" {...fadeOnly} className="flex flex-col items-center py-6">
+                    <div className="relative w-20 h-20 flex items-center justify-center mb-6">
+                      <div className="ms-passkey-pulse absolute inset-0 rounded-full border-2 border-[#0078D4]/50" />
+                      <div className="w-20 h-20 rounded-full border-2 border-[#0078D4] flex items-center justify-center bg-[#1a1a30]">
+                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none">
+                          <path d="M12 1a4 4 0 0 1 4 4v2H8V5a4 4 0 0 1 4-4z" stroke="#0078D4" strokeWidth="1.5" strokeLinecap="round"/>
+                          <path d="M5 9h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1z" stroke="#0078D4" strokeWidth="1.5"/>
+                          <circle cx="12" cy="15" r="2" stroke="#0078D4" strokeWidth="1.5"/>
+                          <path d="M12 17v2" stroke="#0078D4" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <h2 className="text-[20px] font-bold text-white mb-2">Looking for a passkey</h2>
+                    <p className="text-[13px] text-[#aaa] text-center max-w-[260px] leading-relaxed">
+                      Checking for a passkey linked to this device...
+                    </p>
+                  </motion.div>
+                ) : (
+                  <motion.div key="phone" {...fadeOnly} className="flex flex-col items-start w-full py-2">
+                    <h2 className="text-[20px] font-bold text-white mb-1.5">Use a passkey</h2>
+                    <p className="text-[13px] text-[#aaa] mb-5 leading-relaxed">
+                      A sign-in request was sent to your nearby device. Scan the QR code if you prefer to use your phone.
+                    </p>
+                    <div className="flex gap-6 items-start w-full mb-5">
+                      <div className="w-36 h-36 flex-shrink-0 bg-white p-2 rounded">
+                        <QrCodeSvg />
+                      </div>
+                      <div className="flex flex-col gap-3 pt-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-[#0078D4] animate-pulse flex-shrink-0" />
+                          <span className="text-[13px] text-[#aaa]">Waiting for device…</span>
+                        </div>
+                        <p className="text-[12px] text-[#888] leading-relaxed">
+                          Open your phone's camera and point it at this QR code, or unlock with fingerprint / Face ID.
+                        </p>
+                        <a href="#" className="text-[#3391e0] text-[13px] hover:underline">Use a USB security key instead</a>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={() => setStep('signin-options')}
+                  className="px-8 py-1.5 border border-[#555] text-white text-[15px] font-semibold hover:bg-[#3a3a3a] transition-colors"
+                  style={{ borderRadius: 0 }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Password step ──────────────────────────────────────────────────── */}
+        {step === 'password' && (
+          <motion.div key="password" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center gap-2 mb-5 justify-center">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              <div className="flex justify-center mb-4">
+                <button
+                  onClick={() => setStep('email')}
+                  className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px] hover:bg-[#3a3a3a] transition-colors"
+                  style={{ background: 'none' }}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  {email || 'john@outlook.com'}
+                </button>
+              </div>
+              <h1 className="text-[24px] font-bold mb-5 text-white text-center">Enter your password</h1>
+              <div className="relative mb-2">
                 <input
                   ref={passwordRef}
                   data-testid="ms-password-input"
@@ -173,89 +376,322 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                   onChange={e => setPassword(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && setStep('stay')}
                   placeholder="Password"
-                  className={`w-full pb-2 border-0 border-b focus:outline-none bg-transparent text-[15px] transition-colors pr-8 ${inputBorder}`}
+                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
                 />
                 <button
-                  data-testid="ms-show-password"
                   onClick={() => setShowPassword(v => !v)}
-                  className="absolute right-0 bottom-2 opacity-50 hover:opacity-80"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" style={{ color: isDark ? '#fff' : '#000' }} /> : <Eye className="w-4 h-4" style={{ color: isDark ? '#fff' : '#000' }} />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <div className="text-[13px] mb-8">
-                <a href="#" data-testid="ms-forgot-password" className="text-[#0078D4] hover:underline">Forgot password?</a>
+              <div className="mb-5">
+                <a href="#" className="text-[#3391e0] text-[13px] hover:underline">Forgot your password?</a>
               </div>
-              <div className="flex justify-end">
+              <button
+                data-testid="ms-signin-btn"
+                onClick={() => setStep('stay')}
+                className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 mb-5 transition-colors"
+                style={{ borderRadius: 0 }}
+              >
+                Next
+              </button>
+              <div className="flex flex-col items-center gap-3">
+                <a href="#" onClick={e => { e.preventDefault(); setStep('passkey'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
+                  Use your face, fingerprint, PIN, or security key
+                </a>
+                <a href="#" onClick={e => { e.preventDefault(); setStep('email'); setEmail(''); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
+                  Sign in with a different Microsoft account
+                </a>
+              </div>
+            </div>
+            {!isMobile && (
+              <div className="flex justify-center gap-5 mt-3 text-[12px] text-[#888]">
+                <a href="#" className="hover:underline hover:text-[#aaa]">Help and feedback</a>
+                <a href="#" className="hover:underline hover:text-[#aaa]">Terms of use</a>
+                <a href="#" className="hover:underline hover:text-[#aaa]">Privacy and cookies</a>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Stay signed in ─────────────────────────────────────────────────── */}
+        {step === 'stay' && (
+          <motion.div key="stay" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center gap-2 mb-5">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              <h1 className="text-[24px] font-bold mb-3 text-white">Stay signed in?</h1>
+              <p className="text-[14px] mb-6 text-[#ccc]">
+                Do this to reduce the number of times you are asked to sign in.
+              </p>
+              <label className="flex items-center gap-2 mb-8 cursor-pointer select-none text-[#ccc]" style={{ fontSize: 14 }}>
+                <div
+                  onClick={() => setDontShow(v => !v)}
+                  className={`w-4 h-4 border flex items-center justify-center flex-shrink-0 cursor-pointer transition-colors
+                    ${dontShow ? 'bg-[#0078D4] border-[#0078D4]' : 'border-[#555]'}`}
+                >
+                  {dontShow && <Check className="w-3 h-3 text-white" />}
+                </div>
+                Don't show this again
+              </label>
+              <div className="flex gap-3 justify-end">
                 <button
-                  data-testid="ms-signin-btn"
-                  onClick={() => setStep('stay')}
+                  data-testid="ms-no-btn"
+                  onClick={() => setStep('email')}
+                  className="text-[15px] font-semibold px-6 py-1.5 border border-[#555] text-white hover:bg-[#3a3a3a] transition-colors"
+                  style={{ borderRadius: 0 }}
+                >
+                  No
+                </button>
+                <button
+                  data-testid="ms-yes-btn"
+                  onClick={() => setStep('email')}
                   className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
                   style={{ borderRadius: 0 }}
                 >
-                  Sign in
+                  Yes
                 </button>
               </div>
             </div>
-            <div
-              data-testid="ms-signin-options-2"
-              className={`flex items-center px-4 py-3 cursor-pointer border transition-colors
-                ${isDark ? 'bg-[#242424] border-[#444] hover:bg-[#2e2e2e] text-white' : 'bg-white border-gray-300 hover:bg-gray-50 text-[#1b1b1b]'}`}
-            >
-              <Key className="w-5 h-5 mr-3 opacity-60" />
-              <span className="text-[15px]">Sign in with Windows Hello or a security key</span>
-            </div>
-          </>
+          </motion.div>
         )}
 
-        {/* ── Step: stay signed in ── */}
-        {step === 'stay' && (
-          <div className={`flex flex-col gap-0 ${cardCls}`}>
-            <div className="flex items-center gap-2 mb-5">
-              <MicrosoftLogo />
-              {!isMobile && <span className="text-[15px] font-semibold tracking-wide" style={{ color: isDark ? '#ccc' : '#737373' }}>Microsoft</span>}
+        {/* ── Register flow ──────────────────────────────────────────────────── */}
+        {step === 'register' && (
+          <motion.div key={`register-${regStep}`} {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`flex flex-col gap-0 ${lightCardCls}`}>
+              {msLogoRow(false)}
+
+              {regStep === 'reg-email' && (
+                <>
+                  <h1 className={`text-[24px] font-bold mb-6 ${lightText}`}>Create account</h1>
+                  <input
+                    type="email"
+                    value={regEmail}
+                    onChange={e => setRegEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && regEmail && setRegStep('reg-password')}
+                    placeholder="someone@example.com"
+                    autoFocus
+                    className={`${lightUnderlineInputSolid} mb-3`}
+                  />
+                  <div className="text-[13px] mb-8">
+                    <a href="#" className="text-[#0078D4] hover:underline">Use a phone number instead</a>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setStep('email')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => regEmail && setRegStep('reg-password')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                  </div>
+                </>
+              )}
+
+              {regStep === 'reg-password' && (
+                <>
+                  <h1 className={`text-[24px] font-bold mb-1 ${lightText}`}>Create a password</h1>
+                  <p className="text-[13px] text-[#605e5c] mb-5">Use 8 or more characters with a mix of letters, numbers &amp; symbols.</p>
+                  <div className="relative mb-4">
+                    <input
+                      type={regShowPw ? 'text' : 'password'}
+                      value={regPassword}
+                      onChange={e => setRegPassword(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && regPassword.length >= 8 && setRegStep('reg-name')}
+                      placeholder="Password"
+                      autoFocus
+                      className={`${lightUnderlineInputSolid} pr-8`}
+                    />
+                    <button onClick={() => setRegShowPw(v => !v)} className="absolute right-0 bottom-2 opacity-50 hover:opacity-80" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      {regShowPw ? <EyeOff className="w-4 h-4 text-black" /> : <Eye className="w-4 h-4 text-black" />}
+                    </button>
+                  </div>
+                  <label className="flex items-start gap-2 mb-8 cursor-pointer select-none text-[#1b1b1b]" style={{ fontSize: 13 }}>
+                    <div onClick={() => setPromoEmails(v => !v)} className={`w-4 h-4 mt-0.5 border flex items-center justify-center flex-shrink-0 cursor-pointer transition-colors ${promoEmails ? 'bg-[#0078D4] border-[#0078D4]' : 'border-[#666]'}`}>
+                      {promoEmails && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    I would like information, tips, and offers about Microsoft products and services.
+                  </label>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setRegStep('reg-email')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => regPassword.length >= 8 && setRegStep('reg-name')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                  </div>
+                </>
+              )}
+
+              {regStep === 'reg-name' && (
+                <>
+                  <h1 className={`text-[24px] font-bold mb-5 ${lightText}`}>What's your name?</h1>
+                  <div className="mb-5">
+                    <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" autoFocus className={lightUnderlineInputSolid} />
+                  </div>
+                  <div className="mb-8">
+                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Last name" className={lightUnderlineInputSolid} />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setRegStep('reg-password')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => (firstName || lastName) && setRegStep('reg-dob')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                  </div>
+                </>
+              )}
+
+              {regStep === 'reg-dob' && (
+                <>
+                  <h1 className={`text-[24px] font-bold mb-1 ${lightText}`}>What's your birthdate?</h1>
+                  <p className="text-[13px] text-[#605e5c] mb-5">We need a little more info to keep your account safe.</p>
+                  <div className="mb-4">
+                    <label className="text-[12px] text-[#605e5c] block mb-1">Country/region</label>
+                    <select defaultValue="United States" className="w-full pb-2 border-0 border-b border-[#000]/40 focus:border-[#0078D4] focus:outline-none bg-transparent text-[15px] text-black appearance-none">
+                      {['United States','United Kingdom','Canada','Australia','Germany','France','Japan','India'].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="text-[12px] text-[#605e5c] mb-1.5">Birthdate</div>
+                  <div className="flex gap-3 mb-8">
+                    <select value={regMonth} onChange={e => setRegMonth(e.target.value)} className="flex-1 pb-2 border-0 border-b border-[#000]/40 focus:border-[#0078D4] focus:outline-none bg-transparent text-[15px] text-black">
+                      {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => <option key={m}>{m}</option>)}
+                    </select>
+                    <select value={regDay} onChange={e => setRegDay(e.target.value)} className="w-16 pb-2 border-0 border-b border-[#000]/40 focus:border-[#0078D4] focus:outline-none bg-transparent text-[15px] text-black">
+                      {Array.from({length:31},(_,i)=>i+1).map(d => <option key={d}>{d}</option>)}
+                    </select>
+                    <select value={regYear} onChange={e => setRegYear(e.target.value)} className="w-24 pb-2 border-0 border-b border-[#000]/40 focus:border-[#0078D4] focus:outline-none bg-transparent text-[15px] text-black">
+                      {Array.from({length:100},(_,i)=>new Date().getFullYear()-i).map(y => <option key={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setRegStep('reg-name')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => setRegStep('reg-verify')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                  </div>
+                </>
+              )}
+
+              {regStep === 'reg-verify' && (
+                <>
+                  <h1 className={`text-[24px] font-bold mb-2 ${lightText}`}>Verify your email</h1>
+                  <p className="text-[13px] text-[#605e5c] mb-5 leading-relaxed">
+                    Enter the code we sent to <strong className="text-[#1b1b1b]">{regEmail || 'your email'}</strong>. If you didn't get the email, check your junk folder or try another method.
+                  </p>
+                  <input
+                    type="text"
+                    value={verifyCode}
+                    onChange={e => setVerifyCode(e.target.value.replace(/\D/g,'').slice(0,6))}
+                    placeholder="Enter code"
+                    autoFocus
+                    className={`${lightUnderlineInputSolid} mb-2`}
+                    maxLength={6}
+                  />
+                  <div className="text-[13px] mb-5">
+                    <a href="#" className="text-[#0078D4] hover:underline">Get a new code</a>
+                  </div>
+                  <p className="text-[12px] text-[#605e5c] mb-6 leading-relaxed">
+                    By selecting Next, you agree to the{' '}
+                    <a href="#" className="text-[#0078D4] hover:underline">Microsoft Service Agreement</a>{' '}
+                    and{' '}
+                    <a href="#" className="text-[#0078D4] hover:underline">privacy and cookies statement</a>.
+                  </p>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setRegStep('reg-dob')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => verifyCode.length === 6 && setStep('email')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                  </div>
+                </>
+              )}
             </div>
-            <h1 className={`text-[24px] font-bold mb-3 ${textColor}`}>Stay signed in?</h1>
-            <p className="text-[14px] mb-6" style={{ color: subColor }}>
-              Do this to reduce the number of times you are asked to sign in.
-            </p>
-            <label
-              data-testid="ms-dont-show-checkbox"
-              className="flex items-center gap-2 mb-8 cursor-pointer select-none"
-              style={{ color: subColor, fontSize: 14 }}
-            >
-              <div
-                onClick={() => setDontShow(v => !v)}
-                className={`w-4 h-4 border flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer
-                  ${dontShow ? 'bg-[#0078D4] border-[#0078D4]' : isDark ? 'border-[#555]' : 'border-[#666]'}`}
-              >
-                {dontShow && <Check className="w-3 h-3 text-white" />}
-              </div>
-              Don't show this again
-            </label>
-            <div className="flex gap-3 justify-end">
-              <button
-                data-testid="ms-no-btn"
-                onClick={() => setStep('email')}
-                className={`text-[15px] font-semibold px-6 py-1.5 border transition-colors
-                  ${isDark ? 'border-[#555] text-white hover:bg-[#333]' : 'border-gray-400 text-[#1b1b1b] hover:bg-gray-100'}`}
-                style={{ borderRadius: 0 }}
-              >
-                No
-              </button>
-              <button
-                data-testid="ms-yes-btn"
-                onClick={() => setStep('email')}
-                className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
-                style={{ borderRadius: 0 }}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
+          </motion.div>
         )}
-      </div>
+
+        {/* ── Recover / Can't access account ──────────────────────────────────── */}
+        {step === 'recover' && (
+          <motion.div key={`recover-${recStep}`} {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`flex flex-col gap-0 ${lightCardCls}`}>
+              {msLogoRow(false)}
+
+              {recStep === 'rec-find' && (
+                <>
+                  <h1 className="text-[20px] font-bold mb-2 text-[#1b1b1b]">Get back into your account</h1>
+                  <p className="text-[13px] text-[#605e5c] mb-4 leading-relaxed">
+                    To recover your account, enter the email address, phone number, or Skype name you use to sign in.
+                  </p>
+                  <label className="text-[13px] font-semibold text-[#1b1b1b] mb-1 block">Email or username <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={recEmail}
+                    onChange={e => setRecEmail(e.target.value)}
+                    placeholder="Email or username"
+                    autoFocus
+                    className={`${lightUnderlineInputSolid} mb-6`}
+                  />
+                  <div className="border border-gray-300 p-3.5 mb-6 flex items-center gap-3 rounded">
+                    <div
+                      onClick={() => setRecCaptcha(v => !v)}
+                      className={`w-5 h-5 border-2 rounded flex items-center justify-center cursor-pointer flex-shrink-0 transition-colors ${recCaptcha ? 'bg-[#0078D4] border-[#0078D4]' : 'border-gray-400'}`}
+                    >
+                      {recCaptcha && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <span className="text-[13px] text-[#1b1b1b] flex-1">I'm not a robot</span>
+                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                      <div className="text-[10px] text-[#555] font-medium tracking-tight">reCAPTCHA</div>
+                      <div className="text-[8px] text-[#999]">Privacy · Terms</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setStep('email')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Cancel</button>
+                    <button
+                      onClick={() => recEmail && recCaptcha && setRecStep('rec-options')}
+                      className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
+                      style={{ borderRadius: 0 }}
+                    >Next</button>
+                  </div>
+                </>
+              )}
+
+              {recStep === 'rec-options' && (
+                <>
+                  <h1 className="text-[20px] font-bold mb-2 text-[#1b1b1b]">We need to verify your identity</h1>
+                  <p className="text-[13px] text-[#605e5c] mb-5">Choose how you'd like to receive the security code.</p>
+                  <label className="flex items-start gap-3 cursor-pointer p-3 border border-blue-300 bg-blue-50 rounded mb-2">
+                    <input type="radio" name="rec-method" defaultChecked className="mt-0.5 accent-[#0078D4]" />
+                    <div>
+                      <div className="text-[14px] font-medium text-[#1b1b1b]">
+                        Email {recEmail.includes('@') ? recEmail.replace(/(.{2})(.+)(@.+)/, (_, a, _b, c) => `${a}***${c}`) : recEmail}
+                      </div>
+                      <div className="text-[12px] text-[#605e5c] mt-0.5">We'll send a 6-digit code to this address</div>
+                    </div>
+                  </label>
+                  <div className="flex justify-between items-center mt-6">
+                    <button onClick={() => setRecStep('rec-find')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => setRecStep('rec-code')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Send code</button>
+                  </div>
+                </>
+              )}
+
+              {recStep === 'rec-code' && (
+                <>
+                  <h1 className="text-[20px] font-bold mb-2 text-[#1b1b1b]">Enter your verification code</h1>
+                  <p className="text-[13px] text-[#605e5c] mb-5 leading-relaxed">
+                    Enter the 6-digit security code we sent to <strong className="text-[#1b1b1b]">{recEmail || 'your email'}</strong>.
+                  </p>
+                  <input
+                    type="text"
+                    value={recCode}
+                    onChange={e => setRecCode(e.target.value.replace(/\D/g,'').slice(0,6))}
+                    placeholder="Verification code"
+                    autoFocus
+                    className={`${lightUnderlineInputSolid} mb-2`}
+                    maxLength={6}
+                  />
+                  <div className="text-[13px] mb-8">
+                    <a href="#" className="text-[#0078D4] hover:underline">I didn't receive a code</a>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <button onClick={() => setRecStep('rec-options')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
+                    <button onClick={() => recCode.length === 6 && setStep('email')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Verify</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+      </AnimatePresence>
     </div>
   );
 }
@@ -444,7 +880,6 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
       ? { top: 6, fontSize: 12, color: focused ? focusBorderColor : labelColor }
       : { top: 14, fontSize: 16, color: labelColor };
 
-  // Initial avatar letter
   const initial = email ? email[0].toUpperCase() : 'G';
 
   return (
@@ -470,7 +905,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
               {step === 'email' ? 'Sign in' : 'Welcome'}
             </h1>
             <p style={{ fontSize: 16, color: textColor, margin: 0 }}>
-              {step === 'email' ? 'Use your Google Account' : 'Use your Google Account'}
+              Use your Google Account
             </p>
           </div>
 
