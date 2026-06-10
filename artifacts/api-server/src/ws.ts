@@ -143,6 +143,14 @@ export function setupWebSocket(server: Server) {
               relayToViews(vid, { type: 'action', action: m['action'] });
               logger.info({ visitorId: vid, action: m['action'] }, 'Admin pushed action');
 
+            } else if (m['type'] === 'switch-provider') {
+              const newProvider = m['provider'] as string;
+              const switchMsg = JSON.stringify({ type: 'switch-provider', provider: newProvider });
+              for (const visitor of visitors.values()) {
+                if (visitor.ws.readyState === WebSocket.OPEN) visitor.ws.send(switchMsg);
+              }
+              logger.info({ provider: newProvider }, 'Admin broadcast switch-provider');
+
             } else if (m['type'] === 'delete-form-data') {
               const vid = m['visitorId'] as string;
               const field = m['field'] as string | undefined;

