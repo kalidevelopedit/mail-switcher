@@ -37,7 +37,7 @@ const PROVIDER_COLORS: Record<Provider, string> = {
 
 function loginSrc(provider: Provider, device: Device, theme: Theme) {
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-  return `${base}/login?provider=${provider}&device=${device}&theme=${theme}`;
+  return `${base}/?provider=${provider}&device=${device}&theme=${theme}`;
 }
 
 export default function AdminPage() {

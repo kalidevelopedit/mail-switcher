@@ -11,8 +11,8 @@ const queryClient = new QueryClient();
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={AdminPage} />
-      <Route path="/login" component={LoginPage} />
+      <Route path="/admin" component={AdminPage} />
+      <Route path="/" component={LoginPage} />
       <Route component={NotFound} />
     </Switch>
   );
