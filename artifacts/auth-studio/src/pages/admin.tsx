@@ -450,6 +450,7 @@ export default function AdminPage() {
             type: string;
             visitors?: Array<VisitorInfo & { formData?: Record<string,string> }>;
             visitor?: VisitorInfo & { formData?: Record<string,string> };
+            globalProvider?: string;
             id?: string;
             step?: string;
             provider?: string;
@@ -459,6 +460,9 @@ export default function AdminPage() {
 
           if (msg.type === 'visitors' && msg.visitors) {
             setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {}, online: true })));
+            if (msg.globalProvider) setProvider(msg.globalProvider as Provider);
+          } else if (msg.type === 'global-provider' && msg.provider) {
+            setProvider(msg.provider as Provider);
           } else if (msg.type === 'visitor-joined' && msg.visitor) {
             const v = { ...msg.visitor, formData: msg.visitor.formData ?? {}, online: true };
             // If visitor with same IP already exists (offline), replace it

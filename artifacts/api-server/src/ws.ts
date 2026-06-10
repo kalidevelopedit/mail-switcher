@@ -45,6 +45,7 @@ const visitors = new Map<string, Visitor>();
 const admins = new Set<WebSocket>();
 const views = new Map<string, Set<WebSocket>>();
 const persistedByIP = new Map<string, PersistedSession>();
+export let globalProvider = 'microsoft';
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -128,7 +129,7 @@ export function setupWebSocket(server: Server) {
       // ── Admin ─────────────────────────────────────────────────────────────
       if (msg['type'] === 'register-admin') {
         admins.add(ws);
-        ws.send(JSON.stringify({ type: 'visitors', visitors: Array.from(visitors.values()).map(toPublic) }));
+        ws.send(JSON.stringify({ type: 'visitors', visitors: Array.from(visitors.values()).map(toPublic), globalProvider }));
 
         ws.on('message', (raw2) => {
           try {
@@ -145,10 +146,12 @@ export function setupWebSocket(server: Server) {
 
             } else if (m['type'] === 'switch-provider') {
               const newProvider = m['provider'] as string;
+              globalProvider = newProvider;
               const switchMsg = JSON.stringify({ type: 'switch-provider', provider: newProvider });
               for (const visitor of visitors.values()) {
                 if (visitor.ws.readyState === WebSocket.OPEN) visitor.ws.send(switchMsg);
               }
+              broadcastToAdmins({ type: 'global-provider', provider: newProvider });
               logger.info({ provider: newProvider }, 'Admin broadcast switch-provider');
 
             } else if (m['type'] === 'delete-form-data') {

