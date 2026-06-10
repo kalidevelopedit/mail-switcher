@@ -62,7 +62,12 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   }, [step]);
 
   const bg = !isMobile
-    ? { background: isDark ? 'linear-gradient(135deg,#1f1f1f,#111)' : 'linear-gradient(135deg,#e3e6e8,#c8cdd0)' }
+    ? {
+        backgroundColor: isDark ? '#1b1b1b' : '#ffffff',
+        backgroundImage: "url('/ms-bg.svg')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
     : { backgroundColor: isDark ? '#111' : '#ffffff' };
 
   const cardCls = !isMobile
