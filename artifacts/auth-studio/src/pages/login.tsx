@@ -1733,7 +1733,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           display: 'flex',
           flexDirection: isDesktop ? 'row' : 'column',
           width: isDesktop ? 800 : '100%',
-          height: isDesktop ? 450 : '100%',
+          height: isDesktop ? 500 : '100%',
           background: cardBg,
           borderRadius: isDesktop ? 28 : 0,
           padding: isDesktop ? '40px 40px' : '48px 24px 24px',
@@ -1782,7 +1782,8 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
             {(step === 'email' || step === 'error-email') && (
               <>
                 <div>
-                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                  {/* MUI outlined input — label sits on the top border */}
+                  <div style={{ position: 'relative', marginBottom: 6 }}>
                     <input
                       data-testid="google-email-input"
                       type="text"
@@ -1793,12 +1794,24 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       onKeyDown={e => { if (e.key === 'Enter') { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); } }}
                       autoFocus
                       style={{
-                        width: '100%', padding: '20px 16px 8px', fontSize: 16,
+                        width: '100%', height: 56, padding: '0 16px', fontSize: 16,
                         border: `${emailFocused ? 2 : 1}px solid ${step === 'error-email' && !emailFocused ? '#dc2626' : emailFocused ? focusBorderColor : borderColor}`,
                         borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
                       }}
                     />
-                    <label style={{ position: 'absolute', left: 16, pointerEvents: 'none', transition: 'all 0.15s', ...floatingLabel(emailFocused, !!email) }}>
+                    <label style={{
+                      position: 'absolute',
+                      left: (emailFocused || !!email) ? 12 : 16,
+                      top: (emailFocused || !!email) ? 0 : '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: (emailFocused || !!email) ? 12 : 16,
+                      color: emailFocused ? focusBorderColor : (step === 'error-email' && !emailFocused ? '#dc2626' : labelColor),
+                      background: (emailFocused || !!email) ? cardBg : 'transparent',
+                      padding: (emailFocused || !!email) ? '0 4px' : '0',
+                      pointerEvents: 'none',
+                      transition: 'all 0.15s',
+                      lineHeight: 1.2,
+                    }}>
                       Email or phone
                     </label>
                   </div>
@@ -1808,10 +1821,10 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     </p>
                   )}
                   <button data-testid="google-forgot-email"
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0', marginBottom: 20 }}>
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '8px 0 28px', display: 'block' }}>
                     Forgot email?
                   </button>
-                  <p style={{ fontSize: 14, color: subText, margin: '0 0 4px', lineHeight: 1.6 }}>
+                  <p style={{ fontSize: 14, color: subText, margin: 0, lineHeight: 1.6 }}>
                     Not your computer? Use Guest mode to sign in privately.{' '}
                     <button data-testid="google-guest-mode"
                       style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: 0, display: 'inline' }}>
@@ -1819,7 +1832,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     </button>
                   </p>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
                   <button data-testid="google-create-account"
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
                     Create account
