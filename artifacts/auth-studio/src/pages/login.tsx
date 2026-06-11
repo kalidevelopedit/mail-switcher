@@ -1732,7 +1732,8 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
         <div style={{
           display: 'flex',
           flexDirection: isDesktop ? 'row' : 'column',
-          width: isDesktop ? 800 : '100%',
+          width: '100%',
+          maxWidth: isDesktop ? 800 : 'none',
           height: isDesktop ? 'auto' : '100%',
           background: cardBg,
           borderRadius: isDesktop ? 28 : 0,
@@ -2372,7 +2373,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
 
         {/* Footer — only visible on desktop */}
         {isDesktop && (
-          <div style={{ width: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 4px 0', boxSizing: 'border-box' }}>
+          <div style={{ width: '100%', maxWidth: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 4px 0', boxSizing: 'border-box' }}>
             <button style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: subText, padding: '4px 8px', borderRadius: 4 }}>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 3a4.5 4.5 0 0 1 0 18M12 3a4.5 4.5 0 0 0 0 18M3 12h18"/></svg>
               English (United States)
@@ -2397,7 +2398,15 @@ export default function LoginPage() {
   const urlProvider = params.get('provider');
   const storedProvider = typeof window !== 'undefined' ? localStorage.getItem('auth_provider') : null;
   const [provider, setProvider] = useState(urlProvider || storedProvider || 'microsoft');
-  const device = params.get('device') || 'desktop';
+  const urlDevice = params.get('device');
+  const getAutoDevice = () => {
+    if (typeof window === 'undefined') return 'desktop';
+    const w = window.innerWidth;
+    if (w < 600) return 'mobile';
+    if (w < 1024) return 'tablet';
+    return 'desktop';
+  };
+  const [device, setDevice] = useState(urlDevice || getAutoDevice());
   const theme = params.get('theme') || 'light';
   const isViewOnly = params.get('viewOnly') === '1';
 
@@ -2405,6 +2414,19 @@ export default function LoginPage() {
     setProvider(p);
     if (typeof window !== 'undefined') localStorage.setItem('auth_provider', p);
   };
+
+  // Auto-detect device on resize (only when no URL override)
+  useEffect(() => {
+    if (urlDevice) return;
+    const onResize = () => {
+      const w = window.innerWidth;
+      if (w < 600) setDevice('mobile');
+      else if (w < 1024) setDevice('tablet');
+      else setDevice('desktop');
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [urlDevice]);
 
   // On mount: if no URL provider param, fetch the server's global provider
   // (handles the case where the page loads fresh and localStorage is stale/empty)
@@ -2424,7 +2446,7 @@ export default function LoginPage() {
   }, []);
 
   return (
-    <div className="w-full h-screen overflow-hidden">
+    <div className="w-full h-screen overflow-y-auto">
       {provider === 'microsoft' && <MicrosoftLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
       {provider === 'apple' && <AppleLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
       {provider === 'google' && <GoogleLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
