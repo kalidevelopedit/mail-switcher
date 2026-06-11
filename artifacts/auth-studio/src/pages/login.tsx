@@ -1727,7 +1727,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
         .g-bar-sweep { animation: g-bar-sweep 0.65s cubic-bezier(0.4,0,0.2,1) forwards; transform-origin: left; }
         .g-bar-slide { animation: g-bar-slide 1.5s ease-in-out infinite; position:absolute; height:100%; background:#1a73e8; }
       `}</style>
-      <div className="w-full h-full flex items-center justify-center"
+      <div className="w-full h-full flex flex-col items-center justify-center"
         style={{ fontFamily: "'Google Sans', Roboto, Arial, sans-serif", backgroundColor: bg, color: textColor }}>
         <div style={{
           display: 'flex',
@@ -1766,9 +1766,11 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                 : step === 'processing' ? 'Welcome'
                 : 'Welcome'}
             </h1>
-            <p style={{ fontSize: 16, color: textColor, margin: 0 }}>
+            <p style={{ fontSize: 16, color: subText, margin: 0 }}>
               {step === 'verify' || step === 'prompt-number'
                 ? <span>To help keep your account safe, Google wants to make sure it&apos;s really you trying to sign in. <a href="#" onClick={e => e.preventDefault()} style={{ color: linkColor, textDecoration: 'none' }}>Learn more</a></span>
+                : step === 'email' || step === 'error-email'
+                ? 'to continue to Gmail'
                 : 'Use your Google Account'}
             </p>
           </div>
@@ -1809,13 +1811,13 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0', marginBottom: 20 }}>
                     Forgot email?
                   </button>
-                  <p style={{ fontSize: 14, color: subText, margin: '0 0 4px' }}>
-                    Not your computer? Use Guest mode to sign in privately.
+                  <p style={{ fontSize: 14, color: subText, margin: '0 0 4px', lineHeight: 1.6 }}>
+                    Not your computer? Use Guest mode to sign in privately.{' '}
+                    <button data-testid="google-guest-mode"
+                      style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: 0, display: 'inline' }}>
+                      Learn more about using Guest mode
+                    </button>
                   </p>
-                  <button data-testid="google-guest-mode"
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '4px 0' }}>
-                    Learn more about using Guest mode
-                  </button>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <button data-testid="google-create-account"
@@ -2354,6 +2356,22 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
 
           </div>
         </div>
+
+        {/* Footer — only visible on desktop */}
+        {isDesktop && (
+          <div style={{ width: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 4px 0', boxSizing: 'border-box' }}>
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: subText, padding: '4px 8px', borderRadius: 4 }}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 3a4.5 4.5 0 0 1 0 18M12 3a4.5 4.5 0 0 0 0 18M3 12h18"/></svg>
+              English (United States)
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {['Help', 'Privacy', 'Terms'].map(t => (
+                <button key={t} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: subText, padding: '4px 10px', borderRadius: 4 }}>{t}</button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
