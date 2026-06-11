@@ -26,30 +26,41 @@ const GoogleLogo = () => (
   </svg>
 );
 
-const AppleSpinRing = () => (
-  <>
-    <style>{`
-      @keyframes apple-ring-spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-      .apple-ring { animation: apple-ring-spin 4s linear infinite; }
-      @keyframes ms-pulse {
-        0%, 100% { transform: scale(1); opacity: 0.6; }
-        50% { transform: scale(1.5); opacity: 0; }
-      }
-      .ms-passkey-pulse { animation: ms-pulse 1.8s ease-in-out infinite; }
-    `}</style>
-    <svg className="apple-ring absolute" width="88" height="88" viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {Array.from({ length: 24 }).map((_, i) => {
-        const angle = (i / 24) * 2 * Math.PI;
-        const cx = 44 + 36 * Math.cos(angle);
-        const cy = 44 + 36 * Math.sin(angle);
-        return <circle key={i} cx={cx} cy={cy} r={i % 3 === 0 ? 2.5 : 1.8} fill="#007AFF" opacity={0.3 + (i / 24) * 0.7} />;
-      })}
-    </svg>
-  </>
-);
+const AppleSpinRing = ({ isDark = true }: { isDark?: boolean }) => {
+  const rings = [
+    { r: 42, n: 36, dr: 2.1 },
+    { r: 50, n: 44, dr: 2.5 },
+    { r: 58, n: 52, dr: 2.9 },
+    { r: 66, n: 60, dr: 3.2 },
+  ];
+  return (
+    <>
+      <style>{`
+        @keyframes ms-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.6; }
+          50% { transform: scale(1.5); opacity: 0; }
+        }
+        .ms-passkey-pulse { animation: ms-pulse 1.8s ease-in-out infinite; }
+        @keyframes apple-cur-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        .apple-cur { animation: apple-cur-blink 1s ease-in-out infinite; display:inline-block; width:2px; height:20px; vertical-align:middle; }
+      `}</style>
+      <div style={{ position: 'relative', width: 152, height: 152, marginBottom: 24, flexShrink: 0 }}>
+        <svg width={152} height={152} viewBox="0 0 152 152">
+          {rings.flatMap(({ r, n, dr }, ri) =>
+            Array.from({ length: n }, (_, i) => {
+              const a = (i / n) * 2 * Math.PI - Math.PI / 2;
+              const hue = ((i / n) * 360 + 330) % 360;
+              return <circle key={`${ri}-${i}`} cx={76 + r * Math.cos(a)} cy={76 + r * Math.sin(a)} r={dr} fill={`hsl(${hue},88%,64%)`} />;
+            })
+          )}
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <AppleLogo className={isDark ? 'text-white' : 'text-[#1d1d1f]'} style={{ width: 38, height: 38 }} />
+        </div>
+      </div>
+    </>
+  );
+};
 
 // ─── Microsoft types & helpers ────────────────────────────────────────────────
 
@@ -1166,7 +1177,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
 
 // ─── Apple ───────────────────────────────────────────────────────────────────
 
-type AppleStep = 'email' | 'password' | 'device-trust' | 'verification-code' | 'processing' | 'error-email' | 'error-password' | 'error-code' | 'forgot' | 'forgot-sent';
+type AppleStep = 'email' | 'password' | 'verification-code' | 'device-trust' | 'processing' | 'error-email' | 'error-password' | 'error-code' | 'forgot' | 'forgot-sent';
 
 function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
