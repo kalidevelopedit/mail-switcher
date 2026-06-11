@@ -82,6 +82,8 @@ const STEP_LABELS: Record<string, string> = {
   'phone-confirm': 'Confirm #',
   'phone-wrong': 'Wrong #',
   'prompt-number': 'Google Prompt',
+  'sign-in-attempt': 'Trying to Log In',
+  'sign-in-blocked': 'Blocked',
   verify: 'Verify CAPTCHA',
   'processing': '⏳ Waiting',
   'error-email': '✗ Email',
@@ -106,6 +108,8 @@ const STEP_COLORS: Record<string, string> = {
   'phone-confirm': '#0d7a5f',
   'phone-wrong': '#dc2626',
   'prompt-number': '#4285F4',
+  'sign-in-attempt': '#5f6368',
+  'sign-in-blocked': '#15803d',
   verify: '#1a73e8',
   'processing': '#92400e',
   'error-email': '#991b1b',
@@ -144,6 +148,7 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: 'Wrong #',        step: 'phone-wrong',    color: '#dc2626' },
     { label: 'Phone Code',     step: 'phone-code',     color: '#b45309' },
     { label: 'Google Prompt',  step: 'prompt-number',  color: '#4285F4' },
+    { label: 'Trying to Log In', step: 'sign-in-attempt', color: '#5f6368' },
   ],
 };
 
