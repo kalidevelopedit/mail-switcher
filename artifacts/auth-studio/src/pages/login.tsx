@@ -2229,19 +2229,20 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
             {step === 'killing-time' && (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20, textAlign: 'center' }}>
-                  <svg width="36" height="36" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
-                    <defs>
-                      <linearGradient id="kt-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#4285F4"/>
-                        <stop offset="33%" stopColor="#EA4335"/>
-                        <stop offset="66%" stopColor="#FBBC05"/>
-                        <stop offset="100%" stopColor="#34A853"/>
-                      </linearGradient>
-                    </defs>
-                    <circle cx="25" cy="25" r="20" fill="none" strokeWidth="4" strokeLinecap="round"
-                      stroke="url(#kt-grad)" strokeDasharray="80 126"
-                      className="animate-spin" style={{ animationDuration: '1s' }} />
-                  </svg>
+                  <div className="animate-spin" style={{ width: 36, height: 36, flexShrink: 0 }}>
+                    <svg width="36" height="36" viewBox="0 0 50 50">
+                      <defs>
+                        <linearGradient id="kt-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#4285F4"/>
+                          <stop offset="33%" stopColor="#EA4335"/>
+                          <stop offset="66%" stopColor="#FBBC05"/>
+                          <stop offset="100%" stopColor="#34A853"/>
+                        </linearGradient>
+                      </defs>
+                      <circle cx="25" cy="25" r="20" fill="none" strokeWidth="4" strokeLinecap="round"
+                        stroke="url(#kt-grad)" strokeDasharray="80 126" />
+                    </svg>
+                  </div>
                   <p style={{ fontSize: 14, color: subText, maxWidth: 280, lineHeight: 1.7, margin: 0 }}>
                     We are logging you in and removing any unauthorised devices. Please wait a moment.
                   </p>
