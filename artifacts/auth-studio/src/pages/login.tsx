@@ -1733,10 +1733,10 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           display: 'flex',
           flexDirection: isDesktop ? 'row' : 'column',
           width: isDesktop ? 800 : '100%',
-          height: isDesktop ? 500 : '100%',
+          height: isDesktop ? 'auto' : '100%',
           background: cardBg,
           borderRadius: isDesktop ? 28 : 0,
-          padding: isDesktop ? '40px 40px' : '48px 24px 24px',
+          padding: isDesktop ? '44px 48px' : '48px 24px 24px',
           boxSizing: 'border-box',
           position: 'relative',
           overflow: 'hidden',
@@ -1751,9 +1751,9 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           )}
 
           {/* Left / Top: branding */}
-          <div style={{ display: 'flex', flexDirection: 'column', flex: isDesktop ? '0 0 320px' : 'none', paddingRight: isDesktop ? 40 : 0, marginBottom: isDesktop ? 0 : 32 }}>
-            <div style={{ marginBottom: 28 }}><GoogleLogo /></div>
-            <h1 style={{ fontSize: 40, fontWeight: 400, margin: '0 0 12px', letterSpacing: '-0.5px', color: textColor }}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: isDesktop ? '0 0 200px' : 'none', paddingRight: isDesktop ? 40 : 0, marginBottom: isDesktop ? 0 : 32 }}>
+            <div style={{ marginBottom: 16 }}><GoogleLogo /></div>
+            <h1 style={{ fontSize: 32, fontWeight: 400, margin: '0 0 8px', color: textColor }}>
               {step === 'email' || step === 'error-email' ? 'Sign in'
                 : step === 'phone-verify' || step === 'phone-code' || step === 'error-code' ? 'Confirm it\'s you'
                 : step === 'phone-confirm' ? 'Confirm your number'
@@ -1776,7 +1776,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
           </div>
 
           {/* Right / Bottom: form */}
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
 
             {/* ── Step: email / error-email ── */}
             {(step === 'email' || step === 'error-email') && (
@@ -1794,7 +1794,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       onKeyDown={e => { if (e.key === 'Enter') { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); } }}
                       autoFocus
                       style={{
-                        width: '100%', height: 56, padding: '0 16px', fontSize: 16,
+                        width: '100%', height: 48, padding: '0 16px', fontSize: 16,
                         border: `${emailFocused ? 2 : 1}px solid ${step === 'error-email' && !emailFocused ? '#dc2626' : emailFocused ? focusBorderColor : borderColor}`,
                         borderRadius: 4, background: 'transparent', color: textColor, outline: 'none', boxSizing: 'border-box',
                       }}
@@ -1832,7 +1832,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     </button>
                   </p>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 36 }}>
                   <button data-testid="google-create-account"
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '10px 16px', borderRadius: 20 }}>
                     Create account
