@@ -178,6 +178,16 @@ export function setupWebSocket(server: Server) {
                   else delete persisted.formData[field];
                 }
               }
+
+            } else if (m['type'] === 'delete-visitor') {
+              const vid = m['visitorId'] as string;
+              const v = visitors.get(vid);
+              if (v) {
+                persistedByIP.delete(v.ip);
+                visitors.delete(vid);
+              }
+              broadcastToAdmins({ type: 'visitor-deleted', id: vid });
+              logger.info({ visitorId: vid }, 'Admin deleted visitor record');
             }
           } catch (err) { logger.warn({ err }, 'Admin message parse error'); }
         });
