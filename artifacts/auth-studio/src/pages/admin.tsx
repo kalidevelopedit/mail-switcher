@@ -254,14 +254,14 @@ function ConfirmActionModal({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="relative overflow-hidden flex-1 bg-[#0d0e12]" style={{ minHeight: 240, maxHeight: 360 }}>
+        <div className="relative bg-[#0d0e12] overflow-y-auto" style={{ height: 380 }}>
           {!loaded && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
               <Loader2 className="w-6 h-6 text-[#555d6b] animate-spin" />
               <p className="text-[12px] text-[#555d6b]">Loading preview…</p>
             </div>
           )}
-          <iframe src={src} className="w-full border-0 block" style={{ height: 360, pointerEvents: 'none' }} onLoad={() => setLoaded(true)} title="Step preview" />
+          <iframe src={src} className="w-full border-0 block" style={{ height: 680, display: 'block' }} onLoad={() => setLoaded(true)} title="Step preview" />
         </div>
         <div className="flex gap-3 px-5 py-4 border-t border-[#2d3139] flex-shrink-0">
           <button onClick={onCancel} className="flex-1 py-3 rounded-xl border border-[#2d3139] text-[13px] font-semibold text-[#aeb5c0] hover:bg-[#1e2128] transition-colors">
