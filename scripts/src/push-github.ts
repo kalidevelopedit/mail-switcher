@@ -1,5 +1,8 @@
 import { ReplitConnectors } from '@replit/connectors-sdk';
 import { execSync, spawnSync } from 'child_process';
+import { writeFileSync, chmodSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 const OWNER  = 'kalidevelopedit';
 const REPO   = 'mail-switcher';
@@ -64,11 +67,29 @@ async function bypassPushProtection(token: string, placeholderId: string): Promi
   console.log('✅  Bypass granted.');
 }
 
-function tryPush(remote: string): { ok: boolean; output: string } {
-  const result = spawnSync('git', ['push', remote, `HEAD:${BRANCH}`], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+function tryPush(remote: string, token: string): { ok: boolean; output: string } {
+  // Write a temporary credential helper script so git never prompts interactively.
+  // This works for all GitHub token types: gho_ (OAuth), ghp_ (PAT), github_pat_ (fine-grained).
+  const helperPath = join(tmpdir(), `git-cred-helper-${Date.now()}.sh`);
+  writeFileSync(helperPath, `#!/bin/sh\necho username=x-access-token\necho password=${token}\n`);
+  chmodSync(helperPath, 0o755);
+
+  const result = spawnSync(
+    'git',
+    [
+      '-c', 'credential.helper=',          // clear any system helper
+      '-c', `credential.helper=${helperPath}`,
+      'push', remote, `HEAD:${BRANCH}`,
+    ],
+    {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    },
+  );
+
+  try { unlinkSync(helperPath); } catch { /* ignore */ }
+
   const output = (result.stdout ?? '') + (result.stderr ?? '');
   process.stdout.write(output);
   return { ok: result.status === 0, output };
@@ -77,11 +98,12 @@ function tryPush(remote: string): { ok: boolean; output: string } {
 async function main() {
   console.log('🔑  Fetching GitHub token…');
   const token = await getGithubToken();
-  const remote = `https://${OWNER}:${token}@github.com/${OWNER}/${REPO}.git`;
+  // Use a bare URL without credentials — auth is handled via http.extraheader in tryPush
+  const remote = `https://github.com/${OWNER}/${REPO}.git`;
 
   console.log(`📤  Pushing HEAD → ${BRANCH} on github.com/${OWNER}/${REPO} …`);
 
-  let { ok, output } = tryPush(remote);
+  let { ok, output } = tryPush(remote, token);
 
   if (!ok) {
     // Check for push-protection block and extract placeholder_id
@@ -89,7 +111,7 @@ async function main() {
     if (match) {
       await bypassPushProtection(token, match[1]!);
       console.log(`🔁  Retrying push…`);
-      ({ ok, output } = tryPush(remote));
+      ({ ok, output } = tryPush(remote, token));
     }
   }
 

