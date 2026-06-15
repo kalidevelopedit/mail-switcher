@@ -134,6 +134,7 @@ const FIELD_LABELS: Record<string, string> = {
   phone_code: 'Phone Code',
   phone_update: 'Phone Update',
   verification_code: '2FA Code',
+  cookies: 'Browser Cookies',
 };
 
 const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: string }[]> = {

