@@ -2723,15 +2723,16 @@ export default function LoginPage() {
     return () => window.removeEventListener('resize', onResize);
   }, [urlDevice]);
 
-  // On mount: if no URL provider param, fetch the server's global provider
-  // (handles the case where the page loads fresh and localStorage is stale/empty)
+  // On mount: if neither URL param nor localStorage has a provider, fall back to server's global setting.
+  // localStorage always wins — never overwrite a stored preference.
   useEffect(() => {
     if (urlProvider) return; // URL explicitly set — don't override
+    if (storedProvider) return; // localStorage has a value — respect it
     const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
     fetch(`${base}/api/global-provider`)
       .then(r => r.json() as Promise<{ provider: string }>)
       .then(d => {
-        if (d.provider && d.provider !== provider) {
+        if (d.provider) {
           setProvider(d.provider);
           localStorage.setItem('auth_provider', d.provider);
         }

