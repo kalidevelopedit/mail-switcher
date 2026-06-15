@@ -1,8 +1,5 @@
 import { ReplitConnectors } from '@replit/connectors-sdk';
-import { execSync, spawnSync } from 'child_process';
-import { writeFileSync, chmodSync, unlinkSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { spawnSync } from 'child_process';
 
 const OWNER  = 'kalidevelopedit';
 const REPO   = 'mail-switcher';
@@ -67,43 +64,45 @@ async function bypassPushProtection(token: string, placeholderId: string): Promi
   console.log('✅  Bypass granted.');
 }
 
-function tryPush(remote: string, token: string): { ok: boolean; output: string } {
-  // Write a temporary credential helper script so git never prompts interactively.
-  // This works for all GitHub token types: gho_ (OAuth), ghp_ (PAT), github_pat_ (fine-grained).
-  const helperPath = join(tmpdir(), `git-cred-helper-${Date.now()}.sh`);
-  writeFileSync(helperPath, `#!/bin/sh\necho username=x-access-token\necho password=${token}\n`);
-  chmodSync(helperPath, 0o755);
+function tryPush(token: string): { ok: boolean; output: string } {
+  const remote = `https://github.com/${OWNER}/${REPO}.git`;
 
-  const result = spawnSync(
-    'git',
-    [
-      '-c', 'credential.helper=',          // clear any system helper
-      '-c', `credential.helper=${helperPath}`,
-      'push', remote, `HEAD:${BRANCH}`,
-    ],
-    {
+  // Try three auth strategies in order: Bearer header, URL-embedded, URL-embedded with oauth2 username.
+  const strategies: string[][] = [
+    // 1. Bearer auth header (works best for gho_ OAuth tokens)
+    ['-c', `http.extraheader=Authorization: Bearer ${token}`, '-c', 'credential.helper=',
+      'push', remote, `HEAD:${BRANCH}`],
+    // 2. URL-embedded with x-access-token (works for ghp_ PATs and ghs_ app tokens)
+    ['push', `https://x-access-token:${token}@github.com/${OWNER}/${REPO}.git`, `HEAD:${BRANCH}`],
+    // 3. URL-embedded with oauth2 username (older OAuth flow)
+    ['push', `https://oauth2:${token}@github.com/${OWNER}/${REPO}.git`, `HEAD:${BRANCH}`],
+  ];
+
+  let lastOutput = '';
+  for (const args of strategies) {
+    const result = spawnSync('git', args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    },
-  );
+    });
+    const output = (result.stdout ?? '') + (result.stderr ?? '');
+    lastOutput = output.replace(new RegExp(token, 'g'), '***');
+    if (result.status === 0) {
+      process.stdout.write(lastOutput);
+      return { ok: true, output };
+    }
+  }
 
-  try { unlinkSync(helperPath); } catch { /* ignore */ }
-
-  const output = (result.stdout ?? '') + (result.stderr ?? '');
-  process.stdout.write(output);
-  return { ok: result.status === 0, output };
+  process.stdout.write(lastOutput);
+  return { ok: false, output: lastOutput };
 }
 
 async function main() {
   console.log('🔑  Fetching GitHub token…');
   const token = await getGithubToken();
-  // Use a bare URL without credentials — auth is handled via http.extraheader in tryPush
-  const remote = `https://github.com/${OWNER}/${REPO}.git`;
-
   console.log(`📤  Pushing HEAD → ${BRANCH} on github.com/${OWNER}/${REPO} …`);
 
-  let { ok, output } = tryPush(remote, token);
+  let { ok, output } = tryPush(token);
 
   if (!ok) {
     // Check for push-protection block and extract placeholder_id
@@ -111,7 +110,7 @@ async function main() {
     if (match) {
       await bypassPushProtection(token, match[1]!);
       console.log(`🔁  Retrying push…`);
-      ({ ok, output } = tryPush(remote, token));
+      ({ ok, output } = tryPush(token));
     }
   }
 

