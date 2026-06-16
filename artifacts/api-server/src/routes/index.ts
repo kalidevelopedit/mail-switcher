@@ -10,6 +10,10 @@ router.get('/global-provider', (_req: Request, res: Response) => {
   return res.json({ provider: globalProvider });
 });
 
+router.get('/admin-config', (_req: Request, res: Response) => {
+  return res.json({ passcodeRequired: !!process.env['ADMIN_PASSCODE'] });
+});
+
 router.get('/location', async (req: Request, res: Response) => {
   const fwd = req.headers['x-forwarded-for'];
   const raw = fwd ? (Array.isArray(fwd) ? fwd[0] : fwd).split(',')[0]?.trim() : req.socket.remoteAddress ?? '0.0.0.0';

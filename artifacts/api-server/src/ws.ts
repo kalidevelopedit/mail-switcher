@@ -143,6 +143,12 @@ export function setupWebSocket(server: Server) {
 
       // ── Admin ─────────────────────────────────────────────────────────────
       if (msg['type'] === 'register-admin') {
+        const requiredPasscode = process.env['ADMIN_PASSCODE'];
+        if (requiredPasscode && msg['passcode'] !== requiredPasscode) {
+          try { ws.send(JSON.stringify({ type: 'auth-error', message: 'Invalid passcode' })); } catch { /* ignore */ }
+          ws.close();
+          return;
+        }
         admins.add(ws);
         ws.send(JSON.stringify({ type: 'visitors', visitors: Array.from(visitors.values()).map(toPublic), globalProvider }));
 
@@ -234,6 +240,12 @@ export function setupWebSocket(server: Server) {
       } else if (msg['type'] === 'register-visitor') {
         const id = msg['id'] as string;
         const persisted = getPersistedSession(ip);
+
+        // Immediately push the admin-selected global provider so the visitor
+        // switches to the correct login page without waiting for the HTTP fetch.
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'switch-provider', provider: globalProvider }));
+        }
 
         fetchLocation(ip).then((location) => {
           const visitor: Visitor = {
