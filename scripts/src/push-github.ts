@@ -1,9 +1,24 @@
 import { ReplitConnectors } from '@replit/connectors-sdk';
 import { spawnSync } from 'child_process';
+import { readFileSync, writeFileSync } from 'fs';
+import path from 'path';
 
 const OWNER  = 'kalidevelopedit';
 const REPO   = 'mail-switcher';
 const BRANCH = 'main';
+
+// Tracks the last local commit SHA we successfully pushed.
+// Needed because GitHub's Git Data API creates commits with different SHAs
+// from local ones, so after the first push the remote HEAD won't exist locally.
+const SYNC_FILE = path.join('.git', 'github-push-head');
+
+function getLastLocalSha(): string | null {
+  try { return readFileSync(SYNC_FILE, 'utf8').trim() || null; } catch { return null; }
+}
+
+function saveLastLocalSha(sha: string): void {
+  try { writeFileSync(SYNC_FILE, sha + '\n', 'utf8'); } catch { /* ignore */ }
+}
 
 type ProxyFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -35,9 +50,9 @@ interface CommitInfo {
 }
 
 function parseCommits(range: string): CommitInfo[] {
-  // Use a unique separator to handle multi-line commit messages
-  const SEP = '\x00COMMIT\x00';
-  const raw = git('log', '--format=' + '%H\n%T\n%P\n%an\n%ae\n%aI\n%cn\n%ce\n%cI\n%B' + SEP, range);
+  // Use a text separator — null bytes are rejected by Node.js spawnSync
+  const SEP = '<<<COMMIT_SEP>>>';
+  const raw = git('log', '--format=%H%n%T%n%P%n%an%n%ae%n%aI%n%cn%n%ce%n%cI%n%B' + SEP, range);
   if (!raw) return [];
   return raw.split(SEP).map(s => s.trim()).filter(Boolean).map(block => {
     const lines = block.split('\n');
@@ -62,33 +77,30 @@ interface ChangedFile {
   status: 'A' | 'M' | 'D' | 'R' | 'C';
   oldPath?: string;
   path: string;
-  mode: string;
+  /** New file mode from git (e.g. "100644", "100755"). Empty string means deleted. */
+  newMode: string;
 }
 
 function getChangedFiles(commitSha: string): ChangedFile[] {
-  // diff-tree shows what changed in this commit vs its parent
-  const r = spawnSync('git', ['diff-tree', '--no-commit-id', '-r', '--name-status', '-M', commitSha],
+  // --raw gives: :<old-mode> <new-mode> <old-sha> <new-sha> <status>\t<path>
+  // For renames:  :<old-mode> <new-mode> <old-sha> <new-sha> R<score>\t<old>\t<new>
+  const r = spawnSync('git', ['diff-tree', '--no-commit-id', '-r', '--raw', '-M', commitSha],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if ((r.status ?? 0) !== 0) return [];
-  const lines = r.stdout.trim().split('\n').filter(Boolean);
-  return lines.map(line => {
-    const parts = line.split('\t');
-    const statusChar = parts[0]!.charAt(0) as 'A' | 'M' | 'D' | 'R' | 'C';
-    if (statusChar === 'R' || statusChar === 'C') {
-      return { status: statusChar, oldPath: parts[1], path: parts[2]!, mode: '100644' };
+  return r.stdout.trim().split('\n').filter(Boolean).map(line => {
+    // Strip leading ':'
+    const rest = line.startsWith(':') ? line.slice(1) : line;
+    const [meta, ...pathParts] = rest.split('\t');
+    const fields = (meta ?? '').split(' ');
+    // fields: [old-mode, new-mode, old-sha, new-sha, status]
+    const newMode = fields[1] ?? '100644';
+    const statusStr = fields[4] ?? 'M';
+    const statusChar = statusStr.charAt(0) as 'A' | 'M' | 'D' | 'R' | 'C';
+    if ((statusChar === 'R' || statusChar === 'C') && pathParts.length >= 2) {
+      return { status: statusChar, oldPath: pathParts[0], path: pathParts[1]!, newMode };
     }
-    return { status: statusChar, path: parts[1]!, mode: '100644' };
+    return { status: statusChar, path: pathParts[0]!, newMode };
   });
-}
-
-function getFileMode(commitSha: string, filePath: string): string {
-  try {
-    const out = git('ls-tree', commitSha, '--', filePath);
-    // Format: <mode> <type> <sha>\t<path>
-    return out.split(/\s+/)[0] ?? '100644';
-  } catch {
-    return '100644';
-  }
 }
 
 // ─── GitHub Git Data API ─────────────────────────────────────────────────────
@@ -181,8 +193,33 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
     return { ok: true, output: 'Everything up-to-date\n' };
   }
 
+  // Determine the range base. After a push via the Git Data API the remote HEAD
+  // has a different SHA from any local commit, so we can't use remoteHead..HEAD
+  // directly. Fall back to our local sync tracking file instead.
+  let rangeBase: string;
+  const remoteExistsLocally =
+    spawnSync('git', ['cat-file', '-e', remoteHead], { stdio: 'ignore' }).status === 0;
+
+  if (remoteExistsLocally) {
+    rangeBase = remoteHead;
+  } else {
+    const lastLocal = getLastLocalSha();
+    const lastLocalExists = lastLocal
+      ? spawnSync('git', ['cat-file', '-e', lastLocal], { stdio: 'ignore' }).status === 0
+      : false;
+
+    if (lastLocalExists) {
+      rangeBase = lastLocal!;
+      console.log(`  Remote HEAD not in local history — using tracked local base ${rangeBase.slice(0, 7)}`);
+    } else {
+      // No tracking available: push only the most recent commit as a snapshot
+      rangeBase = git('rev-parse', 'HEAD~1');
+      console.log('  No local base found — pushing HEAD only as snapshot');
+    }
+  }
+
   // Commits to push, oldest-first
-  const commits = parseCommits(`${remoteHead}..HEAD`).reverse();
+  const commits = parseCommits(`${rangeBase}..HEAD`).reverse();
   if (!commits.length) {
     return { ok: true, output: 'Everything up-to-date\n' };
   }
@@ -198,14 +235,18 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
     const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
     for (const f of changed) {
       if (f.status === 'D') {
+        // Deletion: mode must still be valid per GitHub API
         treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: null });
       } else {
-        const mode = getFileMode(commit.sha, f.path);
+        // Use the new-mode from diff-tree --raw; fall back to regular file if empty/unexpected
+        const validModes = new Set(['100644', '100755', '120000', '160000', '040000']);
+        const mode = validModes.has(f.newMode) ? f.newMode : '100644';
+        const type = mode === '040000' ? 'tree' : mode === '160000' ? 'commit' : 'blob';
         const content = gitBuffer('show', `${commit.sha}:${f.path}`);
         const blobSha = await createBlob(proxyFetch, content);
-        treeItems.push({ path: f.path, mode, type: 'blob', sha: blobSha });
+        treeItems.push({ path: f.path, mode, type, sha: blobSha });
 
-        // Handle renames: delete the old path
+        // Handle renames: also delete the old path
         if ((f.status === 'R' || f.status === 'C') && f.oldPath) {
           treeItems.push({ path: f.oldPath, mode: '100644', type: 'blob', sha: null });
         }
@@ -229,6 +270,9 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
     const text = await updateRes.text();
     return { ok: false, output: `Failed to update ref: ${updateRes.status}: ${text}` };
   }
+
+  // Record the local HEAD SHA we just pushed so next run can build the correct range
+  saveLastLocalSha(localHead);
 
   return { ok: true, output: '' };
 }

@@ -52,9 +52,16 @@ interface PersistedSession {
 
 const visitors = new Map<string, Visitor>();
 const admins = new Set<WebSocket>();
+const adminWatching = new Map<WebSocket, string | null>(); // ws → visitorId being watched
 const views = new Map<string, Set<WebSocket>>();
 const persistedByIP = new Map<string, PersistedSession>();
 export let globalProvider = 'microsoft';
+
+function countWatchers(visitorId: string): number {
+  let n = 0;
+  for (const id of adminWatching.values()) if (id === visitorId) n++;
+  return n;
+}
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -150,13 +157,26 @@ export function setupWebSocket(server: Server) {
           return;
         }
         admins.add(ws);
+        adminWatching.set(ws, null);
+        broadcastToAdmins({ type: 'admin-count', count: admins.size });
         ws.send(JSON.stringify({ type: 'visitors', visitors: Array.from(visitors.values()).map(toPublic), globalProvider }));
 
         ws.on('message', (raw2) => {
           try {
             const m = JSON.parse(raw2.toString()) as Record<string, unknown>;
 
-            if (m['type'] === 'push-action') {
+            if (m['type'] === 'watch-visitor') {
+              const prevId = adminWatching.get(ws) ?? null;
+              const newId = (m['visitorId'] as string | null) ?? null;
+              adminWatching.set(ws, newId);
+              if (prevId && prevId !== newId) {
+                broadcastToAdmins({ type: 'visitor-watchers', visitorId: prevId, count: countWatchers(prevId) });
+              }
+              if (newId) {
+                broadcastToAdmins({ type: 'visitor-watchers', visitorId: newId, count: countWatchers(newId) });
+              }
+
+            } else if (m['type'] === 'push-action') {
               const vid = m['visitorId'] as string;
               const visitor = visitors.get(vid);
               if (visitor?.ws.readyState === WebSocket.OPEN) {
@@ -217,7 +237,15 @@ export function setupWebSocket(server: Server) {
           } catch (err) { logger.warn({ err }, 'Admin message parse error'); }
         });
 
-        ws.on('close', () => admins.delete(ws));
+        ws.on('close', () => {
+          const watchingId = adminWatching.get(ws) ?? null;
+          admins.delete(ws);
+          adminWatching.delete(ws);
+          broadcastToAdmins({ type: 'admin-count', count: admins.size });
+          if (watchingId) {
+            broadcastToAdmins({ type: 'visitor-watchers', visitorId: watchingId, count: countWatchers(watchingId) });
+          }
+        });
         logger.info('Admin connected');
 
       // ── View-only (modal iframe) ───────────────────────────────────────────

