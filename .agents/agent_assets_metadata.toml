@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "3Syu5uZ5aa_VLaXxS9HGK"
+uri = "file://artifacts/auth-studio/public/opengraph.png"
+type = "image"
+title = "microsoft-signin-og-image"
