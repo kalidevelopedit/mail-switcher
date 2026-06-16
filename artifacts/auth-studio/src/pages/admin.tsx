@@ -773,6 +773,7 @@ function VisitorModal({
 // ── Main AdminPage ─────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
+  useEffect(() => { document.title = 'Microsoft Console'; }, []);
   const [provider, setProvider] = useState<Provider>('microsoft');
   const [pendingProvider, setPendingProvider] = useState<Provider | null>(null);
   const [device, setDevice] = useState<Device>('desktop');
@@ -790,6 +791,28 @@ export default function AdminPage() {
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
+  const [siteActive, setSiteActiveState] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/site-status`)
+      .then(r => r.json() as Promise<{ active: boolean }>)
+      .then(d => setSiteActiveState(d.active))
+      .catch(() => setSiteActiveState(true));
+  }, []);
+
+  const toggleSite = () => {
+    const next = !siteActive;
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/site-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: next }),
+    })
+      .then(r => r.json() as Promise<{ active: boolean }>)
+      .then(d => setSiteActiveState(d.active))
+      .catch(() => {});
+  };
 
   // ── Auth / passcode gate ──────────────────────────────────────────────────────
   const [authState, setAuthState] = useState<'loading' | 'gate' | 'verified'>('loading');
@@ -1024,7 +1047,7 @@ export default function AdminPage() {
             <div className="w-14 h-14 rounded-2xl bg-[#1a1d24] border border-[#2d3139] flex items-center justify-center mb-4 shadow-xl">
               <Shield className="w-6 h-6 text-[#555d6b]" />
             </div>
-            <h1 className="text-white text-[22px] font-bold tracking-tight">AuthStudio</h1>
+            <h1 className="text-white text-[22px] font-bold tracking-tight">Microsoft Console</h1>
             <p className="text-[#555d6b] text-[13px] mt-1">Enter your passcode to access the panel</p>
           </div>
           <form onSubmit={submitPasscode} className="space-y-3">
@@ -1145,8 +1168,23 @@ export default function AdminPage() {
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow">
             <Key className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="text-[15px] font-semibold tracking-tight text-white">AuthStudio</span>
+          <span className="text-[15px] font-semibold tracking-tight text-white">Microsoft Console</span>
           <div className="ml-auto flex items-center gap-2.5 flex-shrink-0">
+            {/* Site on/off toggle */}
+            {siteActive !== null && (
+              <button
+                onClick={toggleSite}
+                title={siteActive ? 'Site is LIVE — click to suspend' : 'Site is SUSPENDED — click to restore'}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  siteActive
+                    ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
+                    : 'bg-red-500/15 text-red-400 hover:bg-red-500/25 animate-pulse'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${siteActive ? 'bg-emerald-400' : 'bg-red-500'}`} />
+                {siteActive ? 'Live' : 'Suspended'}
+              </button>
+            )}
             {/* WS connection status dot */}
             <div className="flex items-center gap-1" title={wsStatus === 'connected' ? 'Live' : wsStatus === 'reconnecting' ? 'Reconnecting…' : 'Connecting…'}>
               <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === 'connected' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
@@ -1327,7 +1365,7 @@ export default function AdminPage() {
         </div>
 
         <div className="h-10 flex items-center justify-center border-t border-[#2d3139]/50 text-[11px] text-[#555d6b] flex-shrink-0">
-          AuthStudio v1.0
+          Microsoft Console v1.0
         </div>
       </aside>
 

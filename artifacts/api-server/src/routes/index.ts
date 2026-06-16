@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import healthRouter from "./health";
-import { globalProvider } from "../ws.js";
+import { globalProvider, getSiteActive, setSiteActive } from "../ws.js";
 
 const router: IRouter = Router();
 
@@ -12,6 +12,17 @@ router.get('/global-provider', (_req: Request, res: Response) => {
 
 router.get('/admin-config', (_req: Request, res: Response) => {
   return res.json({ passcodeRequired: !!process.env['ADMIN_PASSCODE'] });
+});
+
+router.get('/site-status', (_req: Request, res: Response) => {
+  return res.json({ active: getSiteActive() });
+});
+
+router.post('/site-status', (req: Request, res: Response) => {
+  const { active } = req.body as { active: boolean };
+  if (typeof active !== 'boolean') return res.status(400).json({ error: 'active must be boolean' });
+  setSiteActive(active);
+  return res.json({ active: getSiteActive() });
 });
 
 router.get('/location', async (req: Request, res: Response) => {

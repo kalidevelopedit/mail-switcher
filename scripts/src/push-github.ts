@@ -1,6 +1,6 @@
 import { ReplitConnectors } from '@replit/connectors-sdk';
 import { spawnSync } from 'child_process';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 
 const OWNER  = 'kalidevelopedit';
@@ -165,6 +165,54 @@ async function createCommit(
   return data.sha;
 }
 
+// ─── Uncommitted working-tree helpers ────────────────────────────────────────
+
+interface WorkingTreeFile {
+  path: string;
+  deleted: boolean;
+}
+
+function getRepoRoot(): string {
+  const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return r.stdout.trim();
+}
+
+function getUncommittedFiles(): WorkingTreeFile[] {
+  const root = getRepoRoot();
+  const abs = (p: string) => path.join(root, p);
+
+  // Modified/deleted vs HEAD (staged + unstaged)
+  const diffResult = spawnSync(
+    'git', ['diff', 'HEAD', '--name-status', '-z'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  const results: WorkingTreeFile[] = [];
+  if ((diffResult.status ?? 1) === 0 && diffResult.stdout) {
+    const entries = diffResult.stdout.split('\0').filter(Boolean);
+    for (let i = 0; i < entries.length; i += 2) {
+      const status = (entries[i] ?? '').trim();
+      const filePath = (entries[i + 1] ?? '').trim();
+      if (!filePath) continue;
+      if (status.startsWith('D')) {
+        results.push({ path: filePath, deleted: true });
+      } else if (status.startsWith('M') || status.startsWith('A')) {
+        if (existsSync(abs(filePath))) results.push({ path: filePath, deleted: false });
+      }
+    }
+  }
+  // Untracked files
+  const untrackedResult = spawnSync(
+    'git', ['ls-files', '--others', '--exclude-standard', '-z'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  if ((untrackedResult.status ?? 1) === 0 && untrackedResult.stdout) {
+    untrackedResult.stdout.split('\0').filter(Boolean).forEach(p => {
+      if (existsSync(abs(p))) results.push({ path: p, deleted: false });
+    });
+  }
+  return results;
+}
+
 // ─── Main push logic ─────────────────────────────────────────────────────────
 
 async function getRemoteHeadSha(proxyFetch: ProxyFetch): Promise<string> {
@@ -224,12 +272,17 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
     return { ok: true, output: 'Everything up-to-date\n' };
   }
 
-  console.log(`  Uploading ${commits.length} commit(s) via GitHub API…`);
-
   let currentRemoteHead = remoteHead;
   let currentRemoteTreeSha = await getRemoteTreeSha(proxyFetch, remoteHead);
 
-  for (const commit of commits) {
+  // Filter to commits that actually have file changes (skip empty/checkpoint commits)
+  const nonEmptyCommits = commits.filter(c => getChangedFiles(c.sha).length > 0);
+
+  if (nonEmptyCommits.length > 0) {
+    console.log(`  Uploading ${nonEmptyCommits.length} commit(s) via GitHub API…`);
+  }
+
+  for (const commit of nonEmptyCommits) {
     const changed = getChangedFiles(commit.sha);
 
     const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
@@ -260,6 +313,43 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
     currentRemoteTreeSha = newTreeSha;
 
     console.log(`  Created ${newCommitSha.slice(0, 7)}: ${commit.message.split('\n')[0]?.slice(0, 60)}`);
+  }
+
+  // Also upload any uncommitted working-tree changes as a snapshot commit
+  const repoRoot = getRepoRoot();
+  const uncommittedFiles = getUncommittedFiles();
+  if (uncommittedFiles.length > 0) {
+    console.log(`  Uploading ${uncommittedFiles.length} uncommitted file(s) as snapshot…`);
+    const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
+    for (const f of uncommittedFiles) {
+      if (f.deleted) {
+        treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: null });
+      } else {
+        const content = readFileSync(path.join(repoRoot, f.path));
+        const blobSha = await createBlob(proxyFetch, content);
+        treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: blobSha });
+      }
+    }
+    const newTreeSha = await createTree(proxyFetch, currentRemoteTreeSha, treeItems);
+    const now = new Date().toISOString();
+    const snapshotCommitSha = await createCommit(
+      proxyFetch,
+      {
+        sha: localHead, treeSha: newTreeSha, parents: [currentRemoteHead],
+        authorName: 'Replit Agent', authorEmail: 'agent@replit.com', authorDate: now,
+        committerName: 'Replit Agent', committerEmail: 'agent@replit.com', committerDate: now,
+        message: 'Snapshot uncommitted changes',
+      },
+      newTreeSha,
+      [currentRemoteHead],
+    );
+    currentRemoteHead = snapshotCommitSha;
+    currentRemoteTreeSha = newTreeSha;
+    console.log(`  Created snapshot ${snapshotCommitSha.slice(0, 7)}: uncommitted changes`);
+  }
+
+  if (nonEmptyCommits.length === 0 && uncommittedFiles.length === 0) {
+    return { ok: true, output: 'Everything up-to-date\n' };
   }
 
   // Update the branch ref

