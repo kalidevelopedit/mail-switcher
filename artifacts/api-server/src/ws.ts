@@ -353,12 +353,16 @@ export function setupWebSocket(server: Server) {
         };
         visitors.set(id, visitor);
 
+        // Broadcast immediately so the admin sees the visitor and doesn't miss
+        // form-data events that arrive while geolocation is in-flight.
+        broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
+        logger.info({ id, ip, restoredFields: Object.keys(visitor.formData).length }, 'Visitor connected');
+
         fetchLocation(ip).then((location) => {
           const v = visitors.get(id);
           if (v) {
             v.location = location;
-            broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(v) });
-            logger.info({ id, ip, location, restoredFields: Object.keys(v.formData).length }, 'Visitor connected');
+            broadcastToAdmins({ type: 'visitor-location', id, location });
           }
         }).catch((err) => logger.warn({ err }, 'Failed to fetch visitor location'));
 

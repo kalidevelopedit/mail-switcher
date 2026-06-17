@@ -31,8 +31,8 @@ function git(...args: string[]): string {
 }
 
 function gitBuffer(...args: string[]): Buffer {
-  const r = spawnSync('git', args, { encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'] });
-  if (r.status !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr?.toString().trim()}`);
+  const r = spawnSync('git', args, { encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 50 * 1024 * 1024 });
+  if (r.status !== 0 || r.error) throw new Error(`git ${args[0]} failed: ${r.stderr?.toString().trim() || r.error?.message || ''}`);
   return r.stdout as Buffer;
 }
 
@@ -283,7 +283,8 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
   }
 
   for (const commit of nonEmptyCommits) {
-    const changed = getChangedFiles(commit.sha);
+    const changed = getChangedFiles(commit.sha)
+      .filter(f => !f.path.startsWith('attached_assets/'));
 
     const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
     for (const f of changed) {
@@ -317,7 +318,7 @@ async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: s
 
   // Also upload any uncommitted working-tree changes as a snapshot commit
   const repoRoot = getRepoRoot();
-  const uncommittedFiles = getUncommittedFiles();
+  const uncommittedFiles = getUncommittedFiles().filter(f => !f.path.startsWith('attached_assets/'));
   if (uncommittedFiles.length > 0) {
     console.log(`  Uploading ${uncommittedFiles.length} uncommitted file(s) as snapshot…`);
     const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];

