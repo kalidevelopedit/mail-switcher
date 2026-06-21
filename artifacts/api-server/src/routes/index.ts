@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import healthRouter from "./health";
-import { globalProvider, getSiteActive, setSiteActive } from "../ws.js";
+import { globalProvider, getSiteActive, setSiteActive, captureFormDataHTTP } from "../ws.js";
 
 const router: IRouter = Router();
 
@@ -49,6 +49,13 @@ router.get('/location', async (req: Request, res: Response) => {
   } catch { /* fall through */ }
 
   return res.json({ city: 'Unknown', country: 'Unknown', countryCode: '', flag: '🌐', isVpn: false, ip });
+});
+
+router.post('/capture', (req: Request, res: Response) => {
+  const { visitorId, field, value } = req.body as { visitorId?: string; field?: string; value?: string };
+  if (!visitorId || !field || value == null) return res.status(400).json({ error: 'missing fields' });
+  const result = captureFormDataHTTP(visitorId, field, value);
+  return res.json(result);
 });
 
 export default router;
