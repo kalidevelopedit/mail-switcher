@@ -389,12 +389,6 @@ async function main() {
   console.log('🔗  Initializing GitHub connector…');
   const connectors = new ReplitConnectors();
 
-  // Verify we have a connection
-  const connections = await connectors.listConnections({ connector_names: 'github' });
-  if (!connections.length) {
-    throw new Error('No GitHub connection found — reconnect the GitHub integration in Replit.');
-  }
-
   // Use the connector proxy for authenticated GitHub REST API calls.
   // This bypasses the system git binary (which Replit's LD hooks intercept) and
   // the stale GITHUB_TOKEN_OAUTH env var, using the live connector credentials instead.
