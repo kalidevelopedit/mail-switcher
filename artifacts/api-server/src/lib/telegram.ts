@@ -64,6 +64,42 @@ export async function sendTelegramMessage(text: string, force = false): Promise<
   }
 }
 
-export function notifyVisitor(): void {
-  void sendTelegramMessage('Ping — someone visited.');
+function describeClient(userAgent: string): { device: string; browser: string } {
+  const device = /iPad|Tablet/i.test(userAgent)
+    ? 'Tablet'
+    : /Mobile|Android|iPhone/i.test(userAgent)
+      ? 'Mobile'
+      : 'Desktop';
+  const browser = /Edg\//.test(userAgent)
+    ? 'Edge'
+    : /OPR\/|Opera\//.test(userAgent)
+      ? 'Opera'
+      : /Chrome\//.test(userAgent)
+        ? 'Chrome'
+        : /Firefox\//.test(userAgent)
+          ? 'Firefox'
+          : /Safari\//.test(userAgent)
+            ? 'Safari'
+            : 'Unknown browser';
+  return { device, browser };
+}
+
+export function notifyVisitor(input: {
+  country: string;
+  region: string;
+  ip: string;
+  userAgent: string;
+  sessionId: string;
+}): void {
+  const { device, browser } = describeClient(input.userAgent);
+  const safeCountry = input.country.trim() || 'Unknown country';
+  const safeRegion = input.region.trim() || 'Unknown state/region';
+  const shortSession = input.sessionId.replace(/^v-/, '').slice(-8);
+  const message = [
+    `New visit · ${safeCountry} — ${safeRegion}`,
+    `IP: ${input.ip}`,
+    `Device: ${device} · ${browser}`,
+    `Session: ${shortSession}`,
+  ].join('\n');
+  void sendTelegramMessage(message);
 }
