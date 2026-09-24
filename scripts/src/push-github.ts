@@ -25,13 +25,13 @@ type ProxyFetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 // ─── git helpers (local, no network) ────────────────────────────────────────
 
 function git(...args: string[]): string {
-  const r = spawnSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync('git', args, { cwd: getRepoRoot(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.status !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr?.trim()}`);
   return r.stdout.trim();
 }
 
 function gitBuffer(...args: string[]): Buffer {
-  const r = spawnSync('git', args, { encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 50 * 1024 * 1024 });
+  const r = spawnSync('git', args, { cwd: getRepoRoot(), encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 50 * 1024 * 1024 });
   if (r.status !== 0 || r.error) throw new Error(`git ${args[0]} failed: ${r.stderr?.toString().trim() || r.error?.message || ''}`);
   return r.stdout as Buffer;
 }
@@ -234,155 +234,89 @@ async function getRemoteTreeSha(proxyFetch: ProxyFetch, commitSha: string): Prom
 }
 
 async function tryPush(proxyFetch: ProxyFetch): Promise<{ ok: boolean; output: string }> {
+  if (git('status', '--porcelain')) {
+    throw new Error('Commit all project changes before pushing; the working tree is not clean.');
+  }
   const localHead = git('rev-parse', 'HEAD');
   const remoteHead = await getRemoteHeadSha(proxyFetch);
+  const baseTreeSha = await getRemoteTreeSha(proxyFetch, remoteHead);
+  const remoteTreeRes = await proxyFetch(
+    `${GH_API}/repos/${OWNER}/${REPO}/git/trees/${baseTreeSha}?recursive=1`,
+    { headers: { 'X-GitHub-Api-Version': '2022-11-28' } },
+  );
+  if (!remoteTreeRes.ok) throw new Error(`Could not list remote files: ${remoteTreeRes.status}`);
+  const remoteTree = await remoteTreeRes.json() as {
+    truncated: boolean;
+    tree: Array<{ path: string; mode: string; type: string; sha: string }>;
+  };
+  if (remoteTree.truncated) throw new Error('Remote file list was truncated; refusing incomplete sync.');
+  const remoteFiles = new Map(remoteTree.tree
+    .filter(item => item.type !== 'tree')
+    .map(item => [item.path, item]));
 
-  if (localHead === remoteHead) {
-    return { ok: true, output: 'Everything up-to-date\n' };
+  // Sync the full committed project tree, not only commits since the last push.
+  // This also picks up images/assets omitted by older versions of this workflow.
+  const localFiles = git('ls-files', '-s', '-z').split('\0').filter(Boolean).map(line => {
+    const tab = line.indexOf('\t');
+    const [mode, sha] = line.slice(0, tab).split(' ');
+    return { path: line.slice(tab + 1), mode: mode!, sha: sha! };
+  });
+  const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
+  for (const file of localFiles) {
+    const remote = remoteFiles.get(file.path);
+    remoteFiles.delete(file.path);
+    if (remote?.sha === file.sha && remote.mode === file.mode) continue;
+    if (file.mode === '160000') throw new Error(`Submodule unsupported: ${file.path}`);
+    const blobSha = await createBlob(proxyFetch, gitBuffer('show', `${localHead}:${file.path}`));
+    treeItems.push({ path: file.path, mode: file.mode, type: 'blob', sha: blobSha });
   }
-
-  // Determine the range base. After a push via the Git Data API the remote HEAD
-  // has a different SHA from any local commit, so we can't use remoteHead..HEAD
-  // directly. Fall back to our local sync tracking file instead.
-  let rangeBase: string;
-  const remoteExistsLocally =
-    spawnSync('git', ['cat-file', '-e', remoteHead], { stdio: 'ignore' }).status === 0;
-
-  if (remoteExistsLocally) {
-    rangeBase = remoteHead;
-  } else {
-    const lastLocal = getLastLocalSha();
-    const lastLocalExists = lastLocal
-      ? spawnSync('git', ['cat-file', '-e', lastLocal], { stdio: 'ignore' }).status === 0
-      : false;
-
-    if (lastLocalExists) {
-      rangeBase = lastLocal!;
-      console.log(`  Remote HEAD not in local history — using tracked local base ${rangeBase.slice(0, 7)}`);
-    } else {
-      // No tracking available: push only the most recent commit as a snapshot
-      rangeBase = git('rev-parse', 'HEAD~1');
-      console.log('  No local base found — pushing HEAD only as snapshot');
-    }
+  for (const file of remoteFiles.values()) {
+    treeItems.push({ path: file.path, mode: file.mode, type: file.type, sha: null });
   }
-
-  // Commits to push, oldest-first
-  const commits = parseCommits(`${rangeBase}..HEAD`).reverse();
-  if (!commits.length) {
-    return { ok: true, output: 'Everything up-to-date\n' };
+  if (!treeItems.length) {
+    saveLastLocalSha(localHead);
+    return { ok: true, output: 'Remote file tree already matches the complete local project.\n' };
   }
-
-  let currentRemoteHead = remoteHead;
-  let currentRemoteTreeSha = await getRemoteTreeSha(proxyFetch, remoteHead);
-
-  // Filter to commits that actually have file changes (skip empty/checkpoint commits)
-  const nonEmptyCommits = commits.filter(c => getChangedFiles(c.sha).length > 0);
-
-  if (nonEmptyCommits.length > 0) {
-    console.log(`  Uploading ${nonEmptyCommits.length} commit(s) via GitHub API…`);
-  }
-
-  for (const commit of nonEmptyCommits) {
-    const changed = getChangedFiles(commit.sha)
-      .filter(f => !f.path.startsWith('attached_assets/'));
-
-    const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
-    for (const f of changed) {
-      if (f.status === 'D') {
-        // Deletion: mode must still be valid per GitHub API
-        treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: null });
-      } else {
-        // Use the new-mode from diff-tree --raw; fall back to regular file if empty/unexpected
-        const validModes = new Set(['100644', '100755', '120000', '160000', '040000']);
-        const mode = validModes.has(f.newMode) ? f.newMode : '100644';
-        const type = mode === '040000' ? 'tree' : mode === '160000' ? 'commit' : 'blob';
-        const content = gitBuffer('show', `${commit.sha}:${f.path}`);
-        const blobSha = await createBlob(proxyFetch, content);
-        treeItems.push({ path: f.path, mode, type, sha: blobSha });
-
-        // Handle renames: also delete the old path
-        if ((f.status === 'R' || f.status === 'C') && f.oldPath) {
-          treeItems.push({ path: f.oldPath, mode: '100644', type: 'blob', sha: null });
-        }
-      }
-    }
-
-    const newTreeSha = await createTree(proxyFetch, currentRemoteTreeSha, treeItems);
-    const newCommitSha = await createCommit(proxyFetch, commit, newTreeSha, [currentRemoteHead]);
-
-    currentRemoteHead = newCommitSha;
-    currentRemoteTreeSha = newTreeSha;
-
-    console.log(`  Created ${newCommitSha.slice(0, 7)}: ${commit.message.split('\n')[0]?.slice(0, 60)}`);
-  }
-
-  // Also upload any uncommitted working-tree changes as a snapshot commit
-  const repoRoot = getRepoRoot();
-  const uncommittedFiles = getUncommittedFiles().filter(f => !f.path.startsWith('attached_assets/'));
-  if (uncommittedFiles.length > 0) {
-    console.log(`  Uploading ${uncommittedFiles.length} uncommitted file(s) as snapshot…`);
-    const treeItems: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
-    for (const f of uncommittedFiles) {
-      if (f.deleted) {
-        treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: null });
-      } else {
-        const content = readFileSync(path.join(repoRoot, f.path));
-        const blobSha = await createBlob(proxyFetch, content);
-        treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: blobSha });
-      }
-    }
-    const newTreeSha = await createTree(proxyFetch, currentRemoteTreeSha, treeItems);
-    const now = new Date().toISOString();
-    const snapshotCommitSha = await createCommit(
-      proxyFetch,
-      {
-        sha: localHead, treeSha: newTreeSha, parents: [currentRemoteHead],
-        authorName: 'Replit Agent', authorEmail: 'agent@replit.com', authorDate: now,
-        committerName: 'Replit Agent', committerEmail: 'agent@replit.com', committerDate: now,
-        message: 'Snapshot uncommitted changes',
-      },
-      newTreeSha,
-      [currentRemoteHead],
-    );
-    currentRemoteHead = snapshotCommitSha;
-    currentRemoteTreeSha = newTreeSha;
-    console.log(`  Created snapshot ${snapshotCommitSha.slice(0, 7)}: uncommitted changes`);
-  }
-
-  if (nonEmptyCommits.length === 0 && uncommittedFiles.length === 0) {
-    return { ok: true, output: 'Everything up-to-date\n' };
-  }
-
-  // Update the branch ref
+  console.log(`  Syncing ${treeItems.length} added/changed/removed paths (including assets)…`);
+  const newTreeSha = await createTree(proxyFetch, baseTreeSha, treeItems);
+  const now = new Date().toISOString();
+  const newCommitSha = await createCommit(proxyFetch, {
+    sha: localHead, treeSha: newTreeSha, parents: [remoteHead],
+    authorName: 'Replit Agent', authorEmail: 'agent@replit.com', authorDate: now,
+    committerName: 'Replit Agent', committerEmail: 'agent@replit.com', committerDate: now,
+    message: git('log', '-1', '--format=%s'),
+  }, newTreeSha, [remoteHead]);
   const updateRes = await ghPatch(proxyFetch, `/repos/${OWNER}/${REPO}/git/refs/heads/${BRANCH}`, {
-    sha: currentRemoteHead,
+    sha: newCommitSha,
   });
   if (!updateRes.ok) {
     const text = await updateRes.text();
     return { ok: false, output: `Failed to update ref: ${updateRes.status}: ${text}` };
   }
-
-  // Record the local HEAD SHA we just pushed so next run can build the correct range
-  saveLastLocalSha(localHead);
-
-  return { ok: true, output: '' };
-}
-
-async function bypassPushProtection(proxyFetch: ProxyFetch, placeholderId: string): Promise<void> {
-  console.log(`🔓  Bypassing push protection for secret placeholder ${placeholderId} …`);
-  const res = await proxyFetch(
-    `${GH_API}/repos/${OWNER}/${REPO}/secret-scanning/push-protection-bypasses`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28' },
-      body: JSON.stringify({ placeholder_id: placeholderId, reason: 'used_in_tests' }),
-    },
+  const verifiedHead = await getRemoteHeadSha(proxyFetch);
+  if (verifiedHead !== newCommitSha) throw new Error('GitHub branch HEAD changed during verification.');
+  const verifiedTreeSha = await getRemoteTreeSha(proxyFetch, verifiedHead);
+  if (verifiedTreeSha !== newTreeSha) throw new Error('GitHub branch tree does not match the committed project.');
+  const verifiedTreeRes = await proxyFetch(
+    `${GH_API}/repos/${OWNER}/${REPO}/git/trees/${verifiedTreeSha}?recursive=1`,
+    { headers: { 'X-GitHub-Api-Version': '2022-11-28' } },
   );
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Bypass API returned ${res.status}: ${body}`);
+  if (!verifiedTreeRes.ok) throw new Error(`Could not verify remote files: ${verifiedTreeRes.status}`);
+  const verifiedTree = await verifiedTreeRes.json() as {
+    truncated: boolean;
+    tree: Array<{ path: string; mode: string; type: string; sha: string }>;
+  };
+  const verifiedFiles = verifiedTree.tree.filter(item => item.type !== 'tree');
+  const localByPath = new Map(localFiles.map(file => [file.path, file]));
+  if (verifiedTree.truncated || verifiedFiles.length !== localFiles.length ||
+    verifiedFiles.some(file => {
+      const local = localByPath.get(file.path);
+      return !local || local.sha !== file.sha || local.mode !== file.mode;
+    })) {
+    throw new Error('Remote file verification failed: GitHub does not match the local commit.');
   }
-  console.log('✅  Bypass granted.');
+  saveLastLocalSha(localHead);
+  return { ok: true, output: `  Created ${newCommitSha.slice(0, 7)}; verified ${verifiedFiles.length} files match the committed project.\n` };
 }
 
 async function main() {
@@ -396,17 +330,7 @@ async function main() {
 
   console.log(`📤  Pushing HEAD → ${BRANCH} on github.com/${OWNER}/${REPO} …`);
 
-  let { ok, output } = await tryPush(proxyFetch);
-
-  if (!ok) {
-    // Check for push-protection block and extract placeholder_id
-    const match = output.match(/unblock-secret\/([A-Za-z0-9_-]+)/);
-    if (match) {
-      await bypassPushProtection(proxyFetch, match[1]!);
-      console.log(`🔁  Retrying push…`);
-      ({ ok, output } = await tryPush(proxyFetch));
-    }
-  }
+  const { ok, output } = await tryPush(proxyFetch);
 
   if (!ok) {
     throw new Error(`Push failed:\n${output}`);

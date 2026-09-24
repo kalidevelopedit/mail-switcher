@@ -54,8 +54,3 @@ externalPort = 3001
 
 [nix]
 channel = "stable-25_05"
-
-[userenv]
-
-[userenv.shared]
-GITHUB_TOKEN_OAUTH = "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"

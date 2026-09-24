@@ -834,6 +834,7 @@ export default function AdminPage() {
   const [removalWaitSeconds, setRemovalWaitSeconds] = useState(20);
   const [temporaryLockEnabled, setTemporaryLockEnabled] = useState(false);
   const [visitors, setVisitors] = useState<VisitorInfo[]>([]);
+  const [selectedVisitorIds, setSelectedVisitorIds] = useState<Set<string>>(new Set());
   const [modalVisitorIp, setModalVisitorIp] = useState<string | null>(null);
   const [adminCount, setAdminCount] = useState(1);
   const [visitorWatchers, setVisitorWatchers] = useState<Record<string, number>>({});
@@ -1176,6 +1177,11 @@ export default function AdminPage() {
             }));
           } else if (msg.type === 'visitor-deleted' && msg.id) {
             setVisitors(prev => prev.filter(v => v.id !== msg.id));
+            setSelectedVisitorIds(prev => {
+              const next = new Set(prev);
+              next.delete(msg.id!);
+              return next;
+            });
             setModalVisitorIp(prev => { const v = visitors.find(x => x.id === msg.id); return prev === (v?.ip ?? msg.id) ? null : prev; });
           } else if (msg.type === 'admin-count') {
             setAdminCount((msg as unknown as { count: number }).count);
@@ -1258,6 +1264,23 @@ export default function AdminPage() {
     } else {
       setVisitors(prev => prev.filter(v => v.id !== visitorId));
     }
+  };
+
+  const toggleVisitorSelection = (visitorId: string) => {
+    setSelectedVisitorIds(previous => {
+      const next = new Set(previous);
+      if (next.has(visitorId)) next.delete(visitorId);
+      else next.add(visitorId);
+      return next;
+    });
+  };
+
+  const deleteSelectedVisitors = () => {
+    if (selectedVisitorIds.size === 0) return;
+    const count = selectedVisitorIds.size;
+    if (!confirm(`Remove ${count} selected visitor${count === 1 ? '' : 's'} from the dashboard?`)) return;
+    for (const visitorId of selectedVisitorIds) deleteVisitor(visitorId);
+    setSelectedVisitorIds(new Set());
   };
 
   // Poll the disk-backed capture log whenever a visitor modal is open.
@@ -1364,6 +1387,7 @@ export default function AdminPage() {
   const accentColor = PROVIDER_COLORS[provider];
 
   const onlineCount = visitors.filter(v => v.online).length;
+  const allVisitorsSelected = visitors.length > 0 && visitors.every(visitor => selectedVisitorIds.has(visitor.id));
   const visitorsByProvider: Record<string, VisitorInfo[]> = {};
   for (const v of visitors) {
     (visitorsByProvider[v.provider] ??= []).push(v);
@@ -1737,6 +1761,37 @@ export default function AdminPage() {
               <span className="text-[#555d6b] text-[12px]">{visitors.length} total</span>
             )}
           </div>
+          {visitors.length > 0 && (
+            <>
+              <label
+                className="flex items-center gap-2 px-2 py-1.5 text-[11px] font-medium text-[#8a919e] hover:text-white cursor-pointer flex-shrink-0"
+                onClick={event => event.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={allVisitorsSelected}
+                  onChange={() => {
+                    setSelectedVisitorIds(allVisitorsSelected
+                      ? new Set()
+                      : new Set(visitors.map(visitor => visitor.id)));
+                  }}
+                  className="w-3.5 h-3.5 accent-indigo-500"
+                  data-testid="checkbox-select-all-visitors"
+                />
+                Select all
+              </label>
+              {selectedVisitorIds.size > 0 && (
+                <button
+                  onClick={deleteSelectedVisitors}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 transition-colors text-[11px] font-semibold flex-shrink-0"
+                  data-testid="button-delete-selected-visitors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete {selectedVisitorIds.size}
+                </button>
+              )}
+            </>
+          )}
           <button
             onClick={() => setHistoryOpen(open => !open)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-colors text-[11px] font-medium flex-shrink-0 ${historyOpen ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' : 'bg-[#1e2128] border-[#2d3139] text-[#8a919e] hover:text-white'}`}
@@ -1873,6 +1928,15 @@ export default function AdminPage() {
 
                     {/* Card header */}
                     <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedVisitorIds.has(v.id)}
+                        onChange={() => toggleVisitorSelection(v.id)}
+                        onClick={event => event.stopPropagation()}
+                        className="w-4 h-4 mt-2.5 accent-indigo-500 flex-shrink-0 cursor-pointer"
+                        aria-label={`Select ${capturedEmail ?? v.provider} visitor`}
+                        data-testid={`checkbox-select-visitor-${v.id}`}
+                      />
                       <div className="relative flex-shrink-0">
                         <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm">
                           <ProviderBadge provider={v.provider} size={18} />
